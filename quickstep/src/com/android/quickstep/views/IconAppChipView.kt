@@ -145,6 +145,16 @@ constructor(
     var status: AppChipStatus = AppChipStatus.Collapsed
         private set
 
+    /**
+     * petalOS: grid tasks render the chip as an icon-only square (no app name, no arrow).
+     * Set from [setIconOrientation] based on the owning TaskView's grid state.
+     */
+    private var iconOnlyMode: Boolean = false
+
+    /** Width of the icon-only chip: side margins + icon start margin + icon + trailing margin. */
+    private val iconOnlyChipWidth: Int
+        get() = backgroundMarginTopStart + iconViewMarginStart + appIconSize + backgroundMarginTopStart
+
     val menuToCollapsedChipGap: Int =
         getExpandedBackgroundLtrBounds().bottom -
             getCollapsedBackgroundLtrBounds().bottom -
@@ -255,7 +265,12 @@ constructor(
     override fun setIconOrientation(orientationState: RecentsOrientedState, isGridTask: Boolean) {
         val orientationHandler = orientationState.orientationHandler
         isLayoutNaturalToLauncher = orientationHandler.isLayoutNaturalToLauncher
-        // Layout params for anchor view
+        // petalOS: grid tasks show an icon-only chip — hide the app name and dropdown arrow.
+        if (iconOnlyMode != isGridTask) {
+            iconOnlyMode = isGridTask
+            appTitle?.visibility = if (isGridTask) View.GONE else View.VISIBLE
+            iconArrowView?.visibility = if (isGridTask) View.GONE else View.VISIBLE
+        }
         val anchorLayoutParams = menuAnchorView!!.layoutParams as LayoutParams
         if (orientationHandler.isLayoutNaturalToLauncher) {
             anchorLayoutParams.gravity = Gravity.START
@@ -565,7 +580,9 @@ constructor(
     }
 
     private fun getCollapsedBackgroundLtrBounds(): Rect {
-        val bounds = Rect(0, 0, minimumWidth, collapsedMenuDefaultHeight)
+        // petalOS: grid tasks use a square icon-only background.
+        val width = if (iconOnlyMode) iconOnlyChipWidth else minimumWidth
+        val bounds = Rect(0, 0, width, collapsedMenuDefaultHeight)
         bounds.offset(backgroundMarginTopStart, backgroundMarginTopStart)
         return bounds
     }

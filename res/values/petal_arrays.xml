@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+     Copyright (C) 2026 petalOS
+     SPDX-License-Identifier: Apache-2.0
+-->
+<resources>
+    <!-- petalOS: "List" (value 2) is reserved for the upcoming vertical layout. -->
+    <string-array name="petal_recents_layout_entries">
+        <item>@string/petal_recents_layout_stock</item>
+        <item>@string/petal_recents_layout_grid</item>
+        <item>@string/petal_recents_layout_roudabout</item>
+    </string-array>
+    <string-array name="petal_recents_layout_values">
+        <item>0</item>
+        <item>1</item>
+        <item>3</item>
+    </string-array>
+</resources>

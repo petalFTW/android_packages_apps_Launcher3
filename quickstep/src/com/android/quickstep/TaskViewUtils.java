@@ -921,7 +921,10 @@ public final class TaskViewUtils {
         }
         int scrollOffset = recentsView.getScrollOffset(
                 recentsView.indexOfChild(taskView));
-        int gridTranslationY = deviceProfile.getDeviceProperties().isTablet()
+        // petalOS: the user-selected grid layout on phones behaves like the tablet grid, so the
+        // task must animate to its actual grid row (not the row-0/carousel offset).
+        int gridTranslationY = (deviceProfile.getDeviceProperties().isTablet()
+                || com.android.launcher3.petalos.PetalRecentsPrefs.isGrid())
                 ? (int) taskView.getGridTranslationY() : 0;
 
         for (RemoteTargetHandle handle : handleList) {

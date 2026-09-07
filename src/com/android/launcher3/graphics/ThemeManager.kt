@@ -34,6 +34,7 @@ import com.android.launcher3.icons.DotRenderer.IconShapeInfo
 import com.android.launcher3.icons.GraphicsUtils.generateIconShape
 import com.android.launcher3.icons.IconShape
 import com.android.launcher3.icons.IconThemeController
+import com.android.launcher3.petalos.IconPackManager
 import com.android.launcher3.shapes.IconShapeModel.Companion.DEFAULT_ICON_RADIUS
 import com.android.launcher3.shapes.ShapesProvider
 import com.android.launcher3.util.DaggerSingletonObject
@@ -118,6 +119,15 @@ constructor(
         _iconShapeData.dispatchValue(iconShape.createIconShape(iconShapeData.value.pathSize))
     }
 
+    /**
+     * Re-evaluates the icon state after the icon pack selection changes. Selecting a pack forces
+     * themed icons off; restoring the system default re-enables them. Called from
+     * [com.android.launcher3.petalos.IconPackManager].
+     */
+    fun onIconPackChanged() {
+        verifyIconState()
+    }
+
     fun addChangeListener(listener: ThemeChangeListener) = listeners.add(listener)
 
     fun removeChangeListener(listener: ThemeChangeListener) = listeners.remove(listener)
@@ -161,14 +171,19 @@ constructor(
             }
 
         val themeKey = themePreference.value
-        val themeCode = themeKey?.toString() ?: "no-theme"
+        // petalOS: themed icons are suppressed while an icon pack is selected (pack icons render
+        // as-is); restoring the system default pack re-enables them without touching the user's
+        // toggle preference. Forcing null here makes the theme controller null, which every themed
+        // rendering path already treats as "theming off".
+        val effectiveThemeKey = if (IconPackManager.get(context).isPackActive()) null else themeKey
+        val themeCode = effectiveThemeKey?.toString() ?: "no-theme"
 
         val iconControllerFactory =
             if (oldState?.themeCode == themeCode) {
                 oldState.themeController
             } else {
                 oldState?.closeController()
-                themeKey?.run { iconThemeFactories[factoryId]?.createController(themeId) }
+                effectiveThemeKey?.run { iconThemeFactories[factoryId]?.createController(themeId) }
             }
 
         return IconState(

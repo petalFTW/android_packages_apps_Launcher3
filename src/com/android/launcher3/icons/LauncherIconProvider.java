@@ -15,9 +15,11 @@
  */
 package com.android.launcher3.icons;
 
+import android.content.ComponentName;
 import android.content.Context;
 import android.content.res.Resources;
 import android.content.res.XmlResourceParser;
+import android.graphics.drawable.Drawable;
 import android.text.TextUtils;
 import android.util.ArrayMap;
 import android.util.Log;
@@ -27,6 +29,7 @@ import com.android.launcher3.config.FeatureFlags;
 import com.android.launcher3.dagger.ApplicationContext;
 import com.android.launcher3.dagger.LauncherAppSingleton;
 import com.android.launcher3.graphics.ThemeManager;
+import com.android.launcher3.petalos.IconPackManager;
 
 import org.xmlpull.v1.XmlPullParser;
 
@@ -67,9 +70,32 @@ public class LauncherIconProvider extends IconProvider {
     }
 
     @Override
+    public Drawable getIcon(android.content.pm.ComponentInfo info, int iconDpi) {
+        if (info.name != null) {
+            Drawable packIcon = IconPackManager.get(mContext)
+                    .getIcon(new ComponentName(info.packageName, info.name), iconDpi);
+            if (packIcon != null) {
+                return packIcon;
+            }
+        }
+        return super.getIcon(info, iconDpi);
+    }
+
+    @Override
+    public Drawable getIcon(android.content.pm.ApplicationInfo info, int iconDpi) {
+        Drawable packIcon = IconPackManager.get(mContext)
+                .getIconForPackage(info.packageName, iconDpi);
+        if (packIcon != null) {
+            return packIcon;
+        }
+        return super.getIcon(info, iconDpi);
+    }
+
+    @Override
     public void updateSystemState() {
         super.updateSystemState();
         mSystemState += "," + mThemeManager.getIconState().toUniqueId();
+        mSystemState += "," + IconPackManager.get(mContext).getCacheKey();
     }
 
     private Map<String, ThemeData> getThemedIconMap() {

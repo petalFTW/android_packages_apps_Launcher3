@@ -163,7 +163,8 @@ constructor(
 
     val isGridTask: Boolean
         /** Returns whether the task is part of overview grid and not being focused. */
-        get() = container.deviceProfile.getDeviceProperties().isTablet && !isLargeTile
+        get() = (container.deviceProfile.getDeviceProperties().isTablet ||
+                com.android.launcher3.petalos.PetalRecentsPrefs.isGrid()) && !isLargeTile
 
     val isRunningTask: Boolean
         get() = this === recentsView?.runningTaskView
@@ -1256,7 +1257,11 @@ constructor(
         val boxTranslationY: Float
         val expectedWidth: Int
         val expectedHeight: Int
-        if (container.deviceProfile.getDeviceProperties().isTablet) {
+        // petalOS: the iPadOS grid on phones sizes grid tasks from lastComputedGridTaskSize
+        // (previously tablet-only — on phones every card kept the stock carousel size).
+        val useGridSizing = container.deviceProfile.getDeviceProperties().isTablet
+                || com.android.launcher3.petalos.PetalRecentsPrefs.isGrid()
+        if (useGridSizing) {
             val boxWidth: Int
             val boxHeight: Int
 

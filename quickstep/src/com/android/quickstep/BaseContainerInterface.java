@@ -505,6 +505,49 @@ public abstract class BaseContainerInterface<STATE_TYPE extends BaseState<STATE_
         Rect potentialTaskRect = new Rect();
         calculateLargeTileSize(context, dp, potentialTaskRect);
 
+        // petalOS: iPadOS-style grid on phones — derive card size from the available width so the
+        // column count adapts to orientation (3 columns in portrait, more in landscape), keep the
+        // stock two-row geometry (thumbnailTopMargin / rowSpacing / row gap), and center the
+        // two-row block vertically.
+        if (com.android.launcher3.petalos.PetalRecentsPrefs.isGrid()
+                && !dp.getDeviceProperties().isTablet()) {
+            float density = res.getDisplayMetrics().density;
+            int gutter = Math.round(16 * density);
+            int topMargin = dp.getOverviewProfile().getTaskThumbnailTopMarginPx();
+            // petalOS: match the extra row gap added in RecentsView#updateSizeAndPadding.
+            int rowSpacing = dp.getOverviewProfile().getRowSpacing()
+                    + com.android.launcher3.petalos.PetalRecentsPrefs.getGridRowExtraGapPx(context);
+
+            PointF taskDimension = getTaskDimension(dp);
+            Rect insets = dp.getInsets();
+            int sideMargin = dp.getOverviewProfile().getGridSideMargin();
+            int availW = dp.getDeviceProperties().getWidthPx()
+                    - Math.max(insets.left, sideMargin) - Math.max(insets.right, sideMargin);
+
+            // Reference card width: three columns across the natural (portrait) width. This keeps
+            // the phone at 3 columns and lets the column count grow when the canvas is wider.
+            int naturalW = Math.min(dp.getDeviceProperties().getWidthPx(),
+                    dp.getDeviceProperties().getHeightPx());
+            int baseCardW = Math.max(1, (naturalW - 2 * sideMargin - 2 * gutter) / 3);
+            int columns = Math.max(1, Math.min(5, (availW + gutter) / (baseCardW + gutter)));
+
+            int outWidth = columns > 0
+                    ? (availW - (columns - 1) * gutter) / columns : availW;
+            int outHeight = Math.round(outWidth * taskDimension.y / taskDimension.x);
+
+            // Center the two-row block (row pitch = outHeight + topMargin + rowSpacing) so no
+            // dead space piles up below, and never let it overflow above the top inset.
+            int blockHeight = (outHeight + topMargin + rowSpacing) + outHeight;
+            Rect blockRect = new Rect(potentialTaskRect);
+            blockRect.top = potentialTaskRect.top
+                    + Math.max(0, (potentialTaskRect.height() - blockHeight) / 2);
+            int gravity = Gravity.TOP;
+            gravity |= orientationHandler.getRecentsRtlSetting(res)
+                    ? Gravity.RIGHT : Gravity.LEFT;
+            Gravity.apply(gravity, outWidth, outHeight, blockRect, outRect);
+            return;
+        }
+
         float rowHeight = (potentialTaskRect.height()
                 + dp.getOverviewProfile().getTaskThumbnailTopMarginPx()
                 - dp.getOverviewProfile().getRowSpacing()) / 2f;

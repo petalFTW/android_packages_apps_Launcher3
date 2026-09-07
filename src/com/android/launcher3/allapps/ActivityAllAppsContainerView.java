@@ -98,6 +98,8 @@ import com.android.launcher3.views.SpringRelativeLayout;
 import com.android.launcher3.workprofile.PersonalWorkSlidingTabStrip;
 import com.android.systemui.plugins.AllAppsRow;
 
+import org.petalos.config.PetalConfig;
+
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -133,7 +135,7 @@ public class ActivityAllAppsContainerView<T extends Context & ActivityContext>
     protected WorkProfileManager mWorkManager;
     protected final PrivateProfileManager mPrivateProfileManager;
     protected final Point mFastScrollerOffset = new Point();
-    protected final int mScrimColor;
+    protected int mScrimColor;
     protected final float mHeaderThreshold;
     protected final AllAppsSearchUiDelegate mSearchUiDelegate;
 
@@ -150,7 +152,7 @@ public class ActivityAllAppsContainerView<T extends Context & ActivityContext>
                 }
             };
     private final Paint mNavBarScrimPaint;
-    private final int mHeaderProtectionColor;
+    private int mHeaderProtectionColor;
     private final int mPrivateSpaceBottomExtraSpace;
     private final Path mTmpPath = new Path();
     private final RectF mTmpRectF = new RectF();
@@ -204,6 +206,8 @@ public class ActivityAllAppsContainerView<T extends Context & ActivityContext>
         mHeaderThreshold = getResources().getDimensionPixelSize(
                 R.dimen.dynamic_grid_cell_border_spacing);
         mHeaderProtectionColor = Themes.getAttrColor(context, R.attr.allappsHeaderProtectionColor);
+
+        applyPetalAppsColors(context);
 
         mWorkManager = new WorkProfileManager(
                 this,
@@ -323,6 +327,8 @@ public class ActivityAllAppsContainerView<T extends Context & ActivityContext>
         }
 
         mBottomSheetBackgroundColorLegacy = getContext().getColor(R.color.materialColorSurfaceDim);
+
+        applyPetalAppsColors(getContext());
 
         updateBackgroundVisibility(mActivityContext.getDeviceProfile());
         mSearchUiManager.initializeSearch(this);
@@ -859,6 +865,27 @@ public class ActivityAllAppsContainerView<T extends Context & ActivityContext>
 
     boolean isBackgroundBlurEnabled() {
         return Flags.allAppsBlur() && mActivityContext.isAllAppsBackgroundBlurEnabled();
+    }
+
+    /**
+     * Overrides the app drawer colours/transparency from the petalOS customization
+     * settings. When the feature is disabled, this is a no-op and the stock theme
+     * colours are kept.
+     */
+    private void applyPetalAppsColors(Context context) {
+        if (!PetalConfig.isAppsCustomEnabled(context)) {
+            return;
+        }
+        int color = PetalConfig.getAppsColor(context);
+        if (color == PetalConfig.DISABLED) {
+            return;
+        }
+        int alpha = PetalConfig.getAppsAlpha(context);
+        mScrimColor = ColorUtils.setAlphaComponent(color, alpha);
+        mHeaderProtectionColor = ColorUtils.setAlphaComponent(color, alpha);
+        mBottomSheetBackgroundColorOverBlur = ColorUtils.setAlphaComponent(color, alpha);
+        mBottomSheetBackgroundColorBlurFallback = ColorUtils.setAlphaComponent(color, alpha);
+        mBottomSheetBackgroundColorLegacy = ColorUtils.setAlphaComponent(color, alpha);
     }
 
     /**

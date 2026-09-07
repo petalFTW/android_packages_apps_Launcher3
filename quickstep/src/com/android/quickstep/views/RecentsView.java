@@ -189,6 +189,7 @@ import com.android.launcher3.util.VibratorWrapper;
 import com.android.launcher3.util.ViewPool;
 import com.android.launcher3.util.coroutines.DispatcherProvider;
 import com.android.launcher3.util.coroutines.ProductionDispatchers;
+
 import com.android.quickstep.BaseContainerInterface;
 import com.android.quickstep.GestureState;
 import com.android.quickstep.HighResLoadingState;
@@ -528,6 +529,7 @@ public abstract class RecentsView<
     private static final float SIGNIFICANT_MOVE_SCREEN_WIDTH_PERCENTAGE = 0.15f;
 
     private static final float FOREGROUND_SCRIM_TINT = 0.32f;
+    private static final float ROUDABOUT_MIN_SCALE = 0.85f;
 
     protected final RecentsOrientedState mOrientationState;
     protected final BaseContainerInterface<STATE_TYPE, ?> mContainerInterface;
@@ -606,6 +608,7 @@ public abstract class RecentsView<
     private boolean mOverviewGridEnabled;
     private boolean mOverviewFullscreenEnabled;
     private boolean mOverviewSelectEnabled;
+    private boolean mRoudaboutScaleApplied;
 
     private boolean mShouldClampScrollOffset;
     private int mClampedScrollOffsetBound;
@@ -2434,6 +2437,12 @@ public abstract class RecentsView<
         mTopBottomRowHeightDiff = mLastComputedGridTaskSize.height()
                 + dp.getOverviewProfile().getTaskThumbnailTopMarginPx()
                 + dp.getOverviewProfile().getRowSpacing();
+        // petalOS: extra breathing room between the two grid rows.
+        if (com.android.launcher3.petalos.PetalRecentsPrefs.isGrid()
+                && !dp.getDeviceProperties().isTablet()) {
+            mTopBottomRowHeightDiff +=
+                    com.android.launcher3.petalos.PetalRecentsPrefs.getGridRowExtraGapPx(getContext());
+        }
 
         // Force TaskView to update size from thumbnail
         updateTaskSize();
@@ -3094,8 +3103,20 @@ public abstract class RecentsView<
             updateOrientationHandler(/* forceRecreateDragLayerControllers = */ false);
         }
 
+        // The phone grid and the running app use different layout transforms. Keeping the running
+        // app as a live remote surface after the gesture can therefore leave that surface at its
+        // final gesture bounds instead of the TaskView's settled grid bounds. Capture it once the
+        // gesture has completed and release the remote animation, just as we do before an in-place
+        // recents rotation. Tablet overview keeps the platform live-tile behavior.
+        boolean useStaticGridSnapshot =
+                mCurrentGestureEndTarget == GestureState.GestureEndTarget.RECENTS
+                        && com.android.launcher3.petalos.PetalRecentsPrefs.isGrid()
+                        && !mContainer.getDeviceProfile().getDeviceProperties().isTablet();
+
         setEnableFreeScroll(true);
-        setEnableDrawingLiveTile(mCurrentGestureEndTarget == GestureState.GestureEndTarget.RECENTS);
+        setEnableDrawingLiveTile(
+                mCurrentGestureEndTarget == GestureState.GestureEndTarget.RECENTS
+                        && !useStaticGridSnapshot);
         Log.d(TAG, "onGestureAnimationEnd - mEnableDrawingLiveTile: " + mEnableDrawingLiveTile);
         setRunningTaskHidden(false);
         startIconFadeInOnGestureComplete();
@@ -3103,7 +3124,13 @@ public abstract class RecentsView<
         mUtils.startAddDesktopButtonFadeInOnGestureComplete();
         animateActionsViewIn();
 
-        if (mEnableDrawingLiveTile) {
+        if (useStaticGridSnapshot) {
+            switchToScreenshot(() -> {
+                setEnableDrawingLiveTile(false);
+                finishRecentsAnimation(true /* toHome */, false /* shouldPip */,
+                        null /* onFinishComplete */);
+            });
+        } else if (mEnableDrawingLiveTile) {
             if (enableDesktopExplodedView()) {
                 for (TaskView taskView : getTaskViews()) {
                     if (taskView instanceof DesktopTaskView desktopTaskView) {
@@ -3398,6 +3425,7 @@ public abstract class RecentsView<
             }
             float gridTranslation = 0f;
             int taskWidthAndSpacing = taskView.getLayoutParams().width + mPageSpacing;
+
             // Evenly distribute tasks between rows unless rearranging due to task dismissal, in
             // which case keep tasks in their respective rows. For the running task, don't join
             // the grid.
@@ -4820,7 +4848,18 @@ public abstract class RecentsView<
     }
 
     public void setLayoutRotation(int touchRotation, int displayRotation) {
+        // Launcher remains portrait-configured when overview is entered from a landscape app, so
+        // PetalRecentsPrefs cannot infer this from Resources. Publish Quickstep's touch rotation
+        // before any grid flags or geometry are recomputed.
+        com.android.launcher3.petalos.PetalRecentsPrefs.setRecentsRotation(touchRotation);
         if (mOrientationState.update(touchRotation, displayRotation)) {
+            boolean showPetalGrid = getStateManager().getState()
+                    .displayOverviewTasksAsGrid(mContainer.getDeviceProfile());
+            setOverviewGridEnabled(showPetalGrid);
+            // A rotation is not a Launcher state transition, so the normal state animation does
+            // not reset this property. Clear stale two-row translations immediately when falling
+            // back to the landscape carousel (and restore them on returning to portrait).
+            setGridProgress(showPetalGrid ? 1f : 0f);
             updateOrientationHandler();
         }
     }
@@ -5111,6 +5150,7 @@ public abstract class RecentsView<
             }
         }
         updateCurveProperties();
+        updateRoudaboutScale();
     }
 
     /**
@@ -6897,6 +6937,105 @@ public abstract class RecentsView<
     protected void onScrollChanged(int l, int t, int oldl, int oldt) {
         super.onScrollChanged(l, t, oldl, oldt);
         dispatchScrollChanged();
+        updateRoudaboutScale();
+    }
+
+    /**
+     * petalOS "Roudabout", adapted from Infinity-X's Scale effect.
+     *
+     * <p>The task nearest the current page is shown at full size. Cards smoothly recede to 85%
+     * over one card plus page spacing, which gives the carousel a roundabout-like depth effect.
+     * Quickstep may keep Launcher portrait-locked for landscape apps, so use the same active-touch
+     * axis handling as the source implementation.
+     */
+    private void updateRoudaboutScale() {
+        boolean active = com.android.launcher3.petalos.PetalRecentsPrefs.isRoudabout()
+                && !showAsGrid()
+                && !mContainer.getDeviceProfile().getDeviceProperties().isTablet();
+        if (!active) {
+            if (mRoudaboutScaleApplied) {
+                mRoudaboutScaleApplied = false;
+                for (TaskView taskView : getTaskViews()) {
+                    taskView.setScaleX(1f);
+                    taskView.setScaleY(1f);
+                    taskView.updateFullscreenParams();
+                }
+                runActionOnRemoteHandles(remoteTargetHandle ->
+                        remoteTargetHandle.getTaskViewSimulator().recentsViewScale.value = 1f);
+            }
+            return;
+        }
+        if (!isPageScrollsInitialized()) {
+            return;
+        }
+
+        int childCount = Math.min(mPageScrolls.length, getChildCount());
+        if (childCount == 0) {
+            return;
+        }
+        mRoudaboutScaleApplied = true;
+
+        boolean touchInLandscape = mOrientationState.getTouchRotation()
+                        != android.view.Surface.ROTATION_0
+                && mOrientationState.getTouchRotation() != android.view.Surface.ROTATION_180;
+        boolean layoutInLandscape = mOrientationState.getRecentsActivityRotation()
+                        != android.view.Surface.ROTATION_0
+                && mOrientationState.getRecentsActivityRotation()
+                        != android.view.Surface.ROTATION_180;
+        boolean verticalScroll = !mOrientationState.isRecentsActivityRotationAllowed()
+                && touchInLandscape && !layoutInLandscape;
+        int currentScroll = verticalScroll ? getScrollY() : getScrollX();
+
+        int taskSize = 0;
+        for (int i = 0; i < childCount; i++) {
+            View child = getChildAt(i);
+            if (child instanceof TaskView) {
+                taskSize = verticalScroll ? child.getHeight() : child.getWidth();
+                break;
+            }
+        }
+        if (taskSize == 0) {
+            return;
+        }
+
+        int scaleArea = taskSize + mPageSpacing;
+        RecentsPagedOrientationHandler orientationHandler = getPagedOrientationHandler();
+        for (int i = 0; i < childCount; i++) {
+            View child = getChildAt(i);
+            int scrollDelta = Math.abs(currentScroll - mPageScrolls[i]);
+            float scale = scrollDelta <= scaleArea
+                    ? Utilities.mapToRange(
+                            scrollDelta, 0, scaleArea, 1f, ROUDABOUT_MIN_SCALE, LINEAR)
+                    : ROUDABOUT_MIN_SCALE;
+            child.setScaleX(scale);
+            child.setScaleY(scale);
+
+            if (!(child instanceof TaskView taskView)) {
+                continue;
+            }
+            taskView.updateFullscreenParams();
+            if (mRemoteTargetHandles == null) {
+                continue;
+            }
+
+            float primaryScale = orientationHandler.getPrimaryValue(
+                    taskView.getScaleX(), taskView.getScaleY());
+            int[] taskIds = taskView.getTaskIds();
+            for (RemoteTargetHandle remoteTargetHandle : mRemoteTargetHandles) {
+                RemoteAnimationTargets targets =
+                        remoteTargetHandle.getTransformParams().getTargetSet();
+                if (targets == null) {
+                    continue;
+                }
+                for (int taskId : taskIds) {
+                    if (targets.findTask(taskId) != null) {
+                        remoteTargetHandle.getTaskViewSimulator().recentsViewScale.value =
+                                primaryScale;
+                        break;
+                    }
+                }
+            }
+        }
     }
 
     /**

@@ -63,6 +63,7 @@ import com.android.launcher3.R;
 import com.android.launcher3.lineage.LineageUtils;
 import com.android.launcher3.lineage.trust.TrustAppsActivity;
 import com.android.launcher3.states.RotationHelper;
+import com.android.launcher3.petalos.PetalRecentsPrefs;
 import com.android.launcher3.util.DisplayController;
 import com.android.launcher3.util.SettingsCache;
 import com.android.settingslib.widget.SettingsBasePreferenceFragment;
@@ -96,6 +97,7 @@ public class SettingsActivity extends FragmentActivity
     public static final String KEY_TRUST_APPS = "pref_trust_apps";
 
     private static final String KEY_SUGGESTIONS = "pref_suggestions";
+    private static final String PETAL_RECENTS_LAYOUT_KEY = "pref_recents_layout";
     private static final String SUGGESTIONS_PACKAGE = "com.google.android.as";
 
     @Override
@@ -376,6 +378,14 @@ public class SettingsActivity extends FragmentActivity
                 case KEY_SUGGESTIONS:
                     return launcherApps != null &&
                             launcherApps.isPackageEnabled(SUGGESTIONS_PACKAGE, myUserHandle());
+                case PETAL_RECENTS_LAYOUT_KEY:
+                    // petalOS: keep the process-wide mirror in sync so the overview honors the
+                    // new layout the next time it opens.
+                    preference.setOnPreferenceChangeListener((pref, newValue) -> {
+                        PetalRecentsPrefs.setLayout(getContext(), (String) newValue);
+                        return true;
+                    });
+                    return true;
             }
             return true;
         }

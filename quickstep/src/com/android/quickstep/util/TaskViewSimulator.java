@@ -157,7 +157,10 @@ public class TaskViewSimulator implements TransformParams.BuilderProxy {
         mLayoutValid = false;
         mOrientationState.setDeviceProfile(dp);
         if (enableGridOnlyOverview()) {
-            mIsGridTask = dp.getDeviceProperties().isTablet() && !mIsDesktopTask;
+            // petalOS: the user-selected grid layout on phones behaves like the tablet grid.
+            mIsGridTask = (dp.getDeviceProperties().isTablet()
+                    || com.android.launcher3.petalos.PetalRecentsPrefs.isGrid())
+                    && !mIsDesktopTask;
         }
         calculateTaskSize();
     }

@@ -48,6 +48,8 @@ import com.android.launcher3.util.MultiPropertyFactory;
 import com.android.launcher3.util.MultiPropertyFactory.MultiProperty;
 import com.android.systemui.shared.system.BlurUtils;
 
+import org.petalos.config.PetalConfig;
+
 /**
  * Utility class for applying depth effect
  */
@@ -129,13 +131,15 @@ public class BaseDepthController {
 
     public BaseDepthController(QuickstepLauncher activity) {
         mLauncher = activity;
+        final float petalScale = PetalConfig.getAppsBlurScale(activity);
         if (Flags.allAppsBlur() || enableOverviewBackgroundWallpaperBlur()) {
             mCrossWindowBlursEnabled =
                     CrossWindowBlurListeners.getInstance().isCrossWindowBlurEnabled();
-            mMaxBlurRadius = activity.getResources().getDimensionPixelSize(
-                    R.dimen.max_depth_blur_radius_enhanced);
+            mMaxBlurRadius = Math.round(activity.getResources().getDimensionPixelSize(
+                    R.dimen.max_depth_blur_radius_enhanced) * petalScale);
         } else {
-            mMaxBlurRadius = activity.getResources().getInteger(R.integer.max_depth_blur_radius);
+            mMaxBlurRadius = Math.round(activity.getResources().getInteger(
+                    R.integer.max_depth_blur_radius) * petalScale);
         }
         mWallpaperManager = activity.getSystemService(WallpaperManager.class);
 

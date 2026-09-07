@@ -26,6 +26,15 @@
         android:summaryOn="@string/settings_lock_layout_summary_on"
         android:summaryOff="@string/settings_lock_layout_summary_off" />
 
+    <!-- petalOS: recents layout selection -->
+    <ListPreference
+        android:defaultValue="0"
+        android:entries="@array/petal_recents_layout_entries"
+        android:entryValues="@array/petal_recents_layout_values"
+        android:key="pref_recents_layout"
+        android:persistent="true"
+        android:title="@string/petal_recents_layout_title" />
+
     <SwitchPreferenceCompat
         android:defaultValue="false"
         android:key="pref_sleep_gesture"

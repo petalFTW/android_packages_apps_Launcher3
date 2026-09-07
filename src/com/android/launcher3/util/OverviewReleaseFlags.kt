@@ -26,5 +26,12 @@ object OverviewReleaseFlags {
 
     @JvmStatic fun enableOverviewIconMenu() = enableOverviewNewLayout()
 
-    @JvmStatic fun enableGridOnlyOverview() = enableOverviewNewLayout()
+    @JvmStatic fun enableGridOnlyOverview(): Boolean {
+        // petalOS: the 2-row grid overview is also available as a user-selected recents
+        // layout on phones (see petalos Depth Studio / Launcher3 settings).
+        if (com.android.launcher3.petalos.PetalRecentsPrefs.isGrid()) {
+            return true
+        }
+        return enableOverviewNewLayout()
+    }
 }

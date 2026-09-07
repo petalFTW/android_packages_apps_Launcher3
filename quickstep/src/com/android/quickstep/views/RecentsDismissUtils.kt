@@ -51,6 +51,7 @@ import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.roundToInt
 import kotlin.math.sign
+import org.petalos.config.PetalConfig
 
 /**
  * Helper class for [RecentsView]. This util class contains refactored and extracted functions from
@@ -1186,8 +1187,14 @@ constructor(
     /** Animates RecentsView's scale to the provided value, using spring animations. */
     fun animateRecentsScale(scale: Float): SpringAnimation {
         val resourceProvider = DynamicResource.provider(recentsView.mContainer)
-        val dampingRatio = resourceProvider.getFloat(R.dimen.swipe_up_rect_scale_damping_ratio)
-        val stiffness = resourceProvider.getFloat(R.dimen.swipe_up_rect_scale_stiffness)
+        var dampingRatio = resourceProvider.getFloat(R.dimen.swipe_up_rect_scale_damping_ratio)
+        var stiffness = resourceProvider.getFloat(R.dimen.swipe_up_rect_scale_stiffness)
+
+        // petalOS recents animations: a slightly bouncier, springier overview enter/exit.
+        if (PetalConfig.isRecentsAnimEnabled(recentsView.context)) {
+            dampingRatio = (dampingRatio * 0.82f).coerceAtLeast(0.5f)
+            stiffness = (stiffness * 1.1f).coerceAtMost(1000f)
+        }
 
         // Spring which sets the Recents scale on update. This is needed, as the SpringAnimation
         // struggles to animate small values like changing recents scale from 0.9 to 1. So

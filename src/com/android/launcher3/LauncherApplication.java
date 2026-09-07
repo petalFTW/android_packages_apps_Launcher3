@@ -32,6 +32,7 @@ public class LauncherApplication extends Application {
     @Override
     public void onCreate() {
         super.onCreate();
+        com.android.launcher3.petalos.PetalRecentsPrefs.init(this);
         LauncherComponentProvider.get(this).getMainProcessInitializer().init(this);
     }
 

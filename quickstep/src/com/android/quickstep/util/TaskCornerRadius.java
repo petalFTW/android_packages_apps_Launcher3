@@ -23,16 +23,29 @@ import android.content.res.Resources;
 import com.android.launcher3.R;
 import com.android.launcher3.util.Themes;
 
+import org.petalos.config.PetalConfig;
+
 public class TaskCornerRadius {
 
     public static float get(Context context) {
         Resources resources = context.getResources();
+        float radius;
         if (!supportsRoundedCornersOnWindows(resources)) {
-            return resources.getDimension(R.dimen.task_corner_radius_small);
+            radius = resources.getDimension(R.dimen.task_corner_radius_small);
+        } else {
+            float overriddenRadius =
+                    resources.getDimension(R.dimen.task_corner_radius_override);
+            radius = (overriddenRadius > 0) ? overriddenRadius
+                    : Themes.getDialogCornerRadius(context);
         }
+        return applyPetalRecentsStyle(context, radius);
+    }
 
-        float overriddenRadius =
-                resources.getDimension(R.dimen.task_corner_radius_override);
-        return (overriddenRadius > 0) ? overriddenRadius : Themes.getDialogCornerRadius(context);
+    /** Applies the petalOS recents card style (grid / rounded). */
+    private static float applyPetalRecentsStyle(Context context, float radius) {
+        switch (PetalConfig.getRecentsStyle(context)) {
+            case 2: return radius * 1.7f;   // rounded: pill-like corners
+            default: return radius;
+        }
     }
 }

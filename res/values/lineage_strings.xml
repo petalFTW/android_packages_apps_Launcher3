@@ -19,6 +19,13 @@
 
     <!-- Settings -->
 
+    <!-- petalOS: recents layout selection -->
+    <string name="petal_recents_layout_title">Recents layout</string>
+    <string name="petal_recents_layout_stock">Default</string>
+    <string name="petal_recents_layout_grid">Grid</string>
+    <string name="petal_recents_layout_list">List</string>
+    <string name="petal_recents_layout_roudabout">Roudabout</string>
+
     <!-- Edit workspace -->
     <string name="settings_lock_layout_title">Lock layout</string>
     <string name="settings_lock_layout_summary_on">Icons and widgets can\'t be added, removed and moved on the homescreen</string>

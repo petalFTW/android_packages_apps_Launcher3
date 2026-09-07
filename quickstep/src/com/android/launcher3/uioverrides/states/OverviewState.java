@@ -172,7 +172,9 @@ public class OverviewState extends LauncherState {
 
     @Override
     public boolean displayOverviewTasksAsGrid(DeviceProfile deviceProfile) {
-        return deviceProfile.getDeviceProperties().isTablet();
+        // petalOS: honor the user-selected recents grid layout on phones too.
+        return deviceProfile.getDeviceProperties().isTablet()
+                || com.android.launcher3.petalos.PetalRecentsPrefs.isGrid();
     }
 
     @Override
