@@ -18,6 +18,10 @@ public class AppFilter {
 
     private final Set<ComponentName> mFilteredComponents;
 
+    // petalOS: Depth Studio lives in Petal Hub, keep it out of the drawer
+    private static final ComponentName DEPTH_STUDIO =
+            ComponentName.unflattenFromString("org.petalos.depth/.DepthStudioActivity");
+
     @Inject
     public AppFilter(@ApplicationContext Context context) {
         mFilteredComponents = Arrays.stream(
@@ -27,6 +31,9 @@ public class AppFilter {
     }
 
     public boolean shouldShowApp(ComponentName app) {
+        if (DEPTH_STUDIO.equals(app)) {
+            return false;
+        }
         return !mFilteredComponents.contains(app);
     }
 }
