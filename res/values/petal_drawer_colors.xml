@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="petal_drawer_search_fill">#B3FFFFFF</color>
+    <color name="petal_drawer_search_stroke">#26000000</color>
+</resources>

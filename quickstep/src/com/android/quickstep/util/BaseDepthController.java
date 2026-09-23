@@ -131,15 +131,14 @@ public class BaseDepthController {
 
     public BaseDepthController(QuickstepLauncher activity) {
         mLauncher = activity;
-        final float petalScale = PetalConfig.getAppsBlurScale(activity);
         if (Flags.allAppsBlur() || enableOverviewBackgroundWallpaperBlur()) {
             mCrossWindowBlursEnabled =
                     CrossWindowBlurListeners.getInstance().isCrossWindowBlurEnabled();
             mMaxBlurRadius = Math.round(activity.getResources().getDimensionPixelSize(
-                    R.dimen.max_depth_blur_radius_enhanced) * petalScale);
+                    R.dimen.max_depth_blur_radius_enhanced));
         } else {
             mMaxBlurRadius = Math.round(activity.getResources().getInteger(
-                    R.integer.max_depth_blur_radius) * petalScale);
+                    R.integer.max_depth_blur_radius));
         }
         mWallpaperManager = activity.getSystemService(WallpaperManager.class);
 
@@ -234,7 +233,7 @@ public class BaseDepthController {
 
         int previousBlur = mCurrentBlur;
         int newBlur = mCrossWindowBlursEnabled && !hasOpaqueBg && !mPauseBlurs ? (int) (blurAmount
-                * mMaxBlurRadius) : 0;
+                * mMaxBlurRadius * PetalConfig.getAppsBlurScale(mLauncher)) : 0;
         int delta = Math.abs(newBlur - previousBlur);
         if (skipSimilarBlur && delta < Utilities.dpToPx(1) && newBlur != 0 && previousBlur != 0
                 && blurAmount != 1f) {

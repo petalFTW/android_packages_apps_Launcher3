@@ -602,4 +602,5 @@
     <!-- App Title Pill -->
     <dimen name="app_title_pill_horizontal_padding">4dp</dimen>
     <dimen name="app_title_pill_round_rect_padding">2dp</dimen>
+    <dimen name="petal_drawer_corner_radius">32dp</dimen>
 </resources>

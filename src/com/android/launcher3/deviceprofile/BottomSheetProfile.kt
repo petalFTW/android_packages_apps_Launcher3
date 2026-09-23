@@ -63,14 +63,21 @@ data class BottomSheetProfile(
                     // TODO(b/420688601) We shouldn't use Interpolator to calculate static variables
                     else -> {
                         val maxWallpaperScale = res.getFloat(R.dimen.config_wallpaperMaxScale)
-                        Utilities.mapToRange(
-                            maxWallpaperScale * workspaceProfile.workspaceContentScale,
-                            maxWallpaperScale,
-                            1f,
-                            0f,
-                            1f,
-                            LINEAR,
-                        )
+                        if (maxWallpaperScale <= 1f) {
+                            // petalOS: max scale of 1 makes the range below zero length, which
+                            // zeroes the sheet depth so the app drawer never blurs. fall back to
+                            // the same depth the full screen drawer uses.
+                            0.6f
+                        } else {
+                            Utilities.mapToRange(
+                                maxWallpaperScale * workspaceProfile.workspaceContentScale,
+                                maxWallpaperScale,
+                                1f,
+                                0f,
+                                1f,
+                                LINEAR,
+                            )
+                        }
                     }
                 }
             val bottomSheetTopPadding =

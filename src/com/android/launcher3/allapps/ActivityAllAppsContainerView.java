@@ -98,7 +98,6 @@ import com.android.launcher3.views.SpringRelativeLayout;
 import com.android.launcher3.workprofile.PersonalWorkSlidingTabStrip;
 import com.android.systemui.plugins.AllAppsRow;
 
-import org.petalos.config.PetalConfig;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -305,7 +304,7 @@ public class ActivityAllAppsContainerView<T extends Context & ActivityContext>
         mAH.get(SEARCH).setup(mSearchRecyclerView,
                 /* Filter out A-Z apps */ itemInfo -> false);
         rebindAdapters(true /* force */);
-        float cornerRadius = Themes.getDialogCornerRadius(getContext());
+        float cornerRadius = getResources().getDimension(R.dimen.petal_drawer_corner_radius);
         mBottomSheetCornerRadii = new float[]{
                 cornerRadius,
                 cornerRadius, // Top left radius in px
@@ -867,25 +866,18 @@ public class ActivityAllAppsContainerView<T extends Context & ActivityContext>
         return Flags.allAppsBlur() && mActivityContext.isAllAppsBackgroundBlurEnabled();
     }
 
-    /**
-     * Overrides the app drawer colours/transparency from the petalOS customization
-     * settings. When the feature is disabled, this is a no-op and the stock theme
-     * colours are kept.
-     */
+    // A neutral, softly frosted sheet keeps the app grid and wallpaper visually balanced.
     private void applyPetalAppsColors(Context context) {
-        if (!PetalConfig.isAppsCustomEnabled(context)) {
-            return;
-        }
-        int color = PetalConfig.getAppsColor(context);
-        if (color == PetalConfig.DISABLED) {
-            return;
-        }
-        int alpha = PetalConfig.getAppsAlpha(context);
-        mScrimColor = ColorUtils.setAlphaComponent(color, alpha);
-        mHeaderProtectionColor = ColorUtils.setAlphaComponent(color, alpha);
-        mBottomSheetBackgroundColorOverBlur = ColorUtils.setAlphaComponent(color, alpha);
-        mBottomSheetBackgroundColorBlurFallback = ColorUtils.setAlphaComponent(color, alpha);
-        mBottomSheetBackgroundColorLegacy = ColorUtils.setAlphaComponent(color, alpha);
+        boolean dark = (context.getResources().getConfiguration().uiMode
+                & android.content.res.Configuration.UI_MODE_NIGHT_MASK)
+                == android.content.res.Configuration.UI_MODE_NIGHT_YES;
+        int base = dark ? 0xFF181818 : 0xFFF5F5F5;
+        int panel = ColorUtils.setAlphaComponent(base, dark ? 0xA8 : 0xC4);
+        mScrimColor = panel;
+        mHeaderProtectionColor = base;
+        mBottomSheetBackgroundColorOverBlur = panel;
+        mBottomSheetBackgroundColorBlurFallback = base;
+        mBottomSheetBackgroundColorLegacy = panel;
     }
 
     /**
