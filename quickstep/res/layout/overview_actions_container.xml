@@ -31,13 +31,6 @@
         android:orientation="horizontal">
 
         <Button
-            android:id="@+id/action_screenshot"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:drawableStart="@drawable/ic_screenshot"
-            android:text="@string/action_screenshot" />
-
-        <Button
             android:id="@+id/action_split"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
@@ -47,8 +40,7 @@
 
     </LinearLayout>
 
-    <!-- Currently, the only "group action button" is this save app pair button. If more are added,
-    a new LinearLayout may be needed to contain them, but beware of increased memory usage. -->
+    <!-- app pairs get their own damn button -->
     <Button
         android:id="@+id/action_save_app_pair"
         android:layout_width="wrap_content"

@@ -25,7 +25,7 @@ import static com.android.launcher3.AbstractFloatingView.TYPE_REBIND_SAFE;
 import static com.android.launcher3.BaseActivity.INVISIBLE_ALL;
 import static com.android.launcher3.BaseActivity.INVISIBLE_BY_PENDING_FLAGS;
 import static com.android.launcher3.BaseActivity.PENDING_INVISIBLE_BY_WALLPAPER_ANIMATION;
-import static com.android.launcher3.Flags.enableOverviewBackgroundWallpaperBlur;
+import static com.android.quickstep.util.OverviewBlurConfig.isOverviewWallpaperBlurEnabled;
 
 import android.animation.Animator;
 import android.animation.AnimatorListenerAdapter;
@@ -596,7 +596,7 @@ public class LauncherBackAnimationController {
                 : 0;
         mWindowScaleStartCornerRadius = QuickStepContract.getWindowCornerRadius(mLauncher);
         mStatusBarHeight = SystemBarUtils.getStatusBarHeight(mLauncher);
-        if (Flags.allAppsBlur() || enableOverviewBackgroundWallpaperBlur()) {
+        if (Flags.allAppsBlur() || isOverviewWallpaperBlurEnabled()) {
             mMaxBlurRadius = mLauncher.getResources().getDimensionPixelSize(
                     R.dimen.max_depth_blur_radius_enhanced);
         } else {

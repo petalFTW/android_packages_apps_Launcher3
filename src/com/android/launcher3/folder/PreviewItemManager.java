@@ -273,18 +273,24 @@ public class PreviewItemManager {
 
     void buildParamsForPage(int page, ArrayList<PreviewItemDrawingParams> params, boolean animate) {
         List<ItemInfo> items = mIcon.getPreviewItemsOnPage(page);
-
-        // We adjust the size of the list to match the number of items in the preview.
-        while (items.size() < params.size()) {
-            params.remove(params.size() - 1);
-        }
-        while (items.size() > params.size()) {
-            params.add(new PreviewItemDrawingParams(0, 0, 0));
-        }
-
+        ArrayList<PreviewItemDrawingParams> oldParams = new ArrayList<>(params);
+        params.clear();
         int numItemsInFirstPagePreview = page == 0 ? items.size() : MAX_NUM_ITEMS_IN_PREVIEW;
-        for (int i = 0; i < params.size(); i++) {
-            PreviewItemDrawingParams p = params.get(i);
+        for (int i = 0; i < items.size(); i++) {
+            ItemInfo item = items.get(i);
+            PreviewItemDrawingParams p = null;
+            for (PreviewItemDrawingParams old : oldParams) {
+                if (old.item == item || (old.item != null && old.item.id >= 0
+                        && old.item.id == item.id)) {
+                    p = old;
+                    break;
+                }
+            }
+            if (p == null) {
+                p = new PreviewItemDrawingParams(0, 0, 0);
+                computePreviewItemDrawingParams(ENTER_INDEX, numItemsInFirstPagePreview, p);
+            } else oldParams.remove(p);
+            params.add(p);
             setDrawable(p, items.get(i));
 
             if (!animate) {
@@ -297,8 +303,8 @@ public class PreviewItemManager {
                 }
             } else {
                 FolderPreviewItemAnim anim = new FolderPreviewItemAnim(this, p, i,
-                        mNumOfPrevItems, i, numItemsInFirstPagePreview, DROP_IN_ANIMATION_DURATION,
-                        null);
+                         mNumOfPrevItems, i, numItemsInFirstPagePreview, DROP_IN_ANIMATION_DURATION,
+                         null, true);
 
                 if (p.anim != null) {
                     if (p.anim.hasEqualFinalState(anim)) {
@@ -311,7 +317,12 @@ public class PreviewItemManager {
                 p.anim.start();
             }
         }
+        for (PreviewItemDrawingParams removed : oldParams) {
+            if (removed.anim != null) removed.anim.cancel();
+        }
     }
+
+    boolean hasPreviewItems() { return !mFirstPageParams.isEmpty(); }
 
     void onFolderClose(int currentPage) {
         // If we are not closing on the first page, we animate the current page preview items

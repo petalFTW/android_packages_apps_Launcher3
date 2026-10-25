@@ -9,10 +9,12 @@
         <item>@string/petal_recents_layout_stock</item>
         <item>@string/petal_recents_layout_grid</item>
         <item>@string/petal_recents_layout_roudabout</item>
+        <item>@string/petal_recents_layout_stack</item>
     </string-array>
     <string-array name="petal_recents_layout_values">
         <item>0</item>
         <item>1</item>
         <item>3</item>
+        <item>4</item>
     </string-array>
 </resources>

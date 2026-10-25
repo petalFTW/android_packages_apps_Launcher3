@@ -25,6 +25,7 @@ import android.util.Log;
 import androidx.annotation.Nullable;
 
 import com.android.launcher3.Launcher;
+import com.android.launcher3.PetalLauncherPrefs;
 import com.android.launcher3.LauncherState;
 import com.android.launcher3.anim.AnimationSuccessListener;
 import com.android.launcher3.statemanager.StateManager;
@@ -46,7 +47,7 @@ public class OverviewToHomeAnim {
     @Nullable
     private final BiConsumer<AnimatorSet, Long> mSplitCancelConsumer;
 
-    // Only run mOnReachedHome when both of these are true.
+    // Finish the gesture only after both the overview and workspace reveal have settled.
     private boolean mIsHomeStaggeredAnimFinished;
     private boolean mIsOverviewHidden;
 
@@ -57,10 +58,7 @@ public class OverviewToHomeAnim {
         mSplitCancelConsumer = splitCancelConsumer;
     }
 
-    /**
-     * Starts the animation. If velocity < 0 (i.e. upwards), also plays a
-     * {@link WorkspaceRevealAnim}.
-     */
+    /** Starts the overview-to-home transition with the workspace content reveal. */
     public void animateWithVelocity(float velocity) {
         StateManager<LauncherState, Launcher> stateManager = mLauncher.getStateManager();
         LauncherState startState = stateManager.getState();
@@ -69,7 +67,8 @@ public class OverviewToHomeAnim {
         }
         AnimatorSet anim = new AnimatorSet();
 
-        boolean playWorkspaceRevealAnim = velocity < 0;
+        boolean playWorkspaceRevealAnim = PetalLauncherPrefs.enabled(mLauncher,
+                PetalLauncherPrefs.HOME_ANIMATION) || velocity < 0;
         if (playWorkspaceRevealAnim) {
             WorkspaceRevealAnim workspaceRevealAnim = new WorkspaceRevealAnim(mLauncher,
                     false /* animateOverviewScrim */);
@@ -115,4 +114,5 @@ public class OverviewToHomeAnim {
             mOnReachedHome.run();
         }
     }
+
 }

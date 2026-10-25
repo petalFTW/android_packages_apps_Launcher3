@@ -18,6 +18,32 @@
     xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:launcher="http://schemas.android.com/apk/res-auto">
 
+    <androidx.preference.PreferenceScreen
+        android:key="petal_os_hub"
+        android:title="@string/petal_os_hub_title"
+        android:summary="@string/petal_os_hub_summary">
+        <SwitchPreferenceCompat
+            android:key="petal_unlock_animation"
+            android:title="@string/petal_unlock_animation_title"
+            android:summary="@string/petal_unlock_animation_summary"
+            android:defaultValue="false" />
+        <SwitchPreferenceCompat
+            android:key="petal_home_animation"
+            android:title="@string/petal_home_animation_title"
+            android:summary="@string/petal_home_animation_summary"
+            android:defaultValue="false" />
+        <SwitchPreferenceCompat
+            android:key="petal_drawer_animation"
+            android:title="@string/petal_drawer_animation_title"
+            android:summary="@string/petal_drawer_animation_summary"
+            android:defaultValue="true" />
+        <SwitchPreferenceCompat
+            android:key="petal_dock_enabled"
+            android:title="@string/petal_dock_title"
+            android:summary="@string/petal_dock_summary"
+            android:defaultValue="true" />
+    </androidx.preference.PreferenceScreen>
+
     <SwitchPreferenceCompat
         android:defaultValue="false"
         android:key="pref_workspace_lock"

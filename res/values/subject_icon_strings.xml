@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="subject_icons_title">Cutout Icons</string>
+    <string name="subject_icons_processing">Preparing Cutout Icons</string>
+    <string name="subject_icons_default_pack">Select system default icons before preparing Cutout Icons</string>
+</resources>

@@ -103,6 +103,9 @@ public class TaskViewSimulator implements TransformParams.BuilderProxy {
     public final AnimatedFloat taskSecondaryTranslation = new AnimatedFloat();
     public final AnimatedFloat taskGridTranslationX = new AnimatedFloat();
     public final AnimatedFloat taskGridTranslationY = new AnimatedFloat();
+    // depth isn't the overview zoom, stop mixing the two
+    public float petalTaskScale = 1f;
+    public float petalTaskTranslation = 0f;
 
     // Carousel properties
     public final AnimatedFloat carouselScale = new AnimatedFloat();
@@ -472,7 +475,7 @@ public class TaskViewSimulator implements TransformParams.BuilderProxy {
 
         float fullScreenProgress = Utilities.boundToRange(this.fullScreenProgress.value, 0, 1);
         mCurrentFullscreenParams.setProgress(fullScreenProgress, recentsViewScale.value,
-                carouselScale.value);
+                carouselScale.value * petalTaskScale);
 
         // Apply thumbnail matrix
         float taskWidth = mTaskRect.width();
@@ -494,6 +497,8 @@ public class TaskViewSimulator implements TransformParams.BuilderProxy {
             }
         }
 
+        mMatrix.postScale(petalTaskScale, petalTaskScale,
+                mTaskRect.exactCenterX(), mTaskRect.exactCenterY());
         mOrientationState.getOrientationHandler().setPrimary(mMatrix, MATRIX_POST_TRANSLATE,
                 taskPrimaryTranslation.value);
         mOrientationState.getOrientationHandler().setSecondary(mMatrix, MATRIX_POST_TRANSLATE,
@@ -503,6 +508,8 @@ public class TaskViewSimulator implements TransformParams.BuilderProxy {
         mMatrix.postScale(carouselScale.value, carouselScale.value,
                 mIsRecentsRtl ? mCarouselTaskSize.right : mCarouselTaskSize.left,
                 mCarouselTaskSize.top);
+        mOrientationState.getOrientationHandler().setPrimary(mMatrix, MATRIX_POST_TRANSLATE,
+                petalTaskTranslation);
 
         mOrientationState.getOrientationHandler().setPrimary(
                 mMatrix, MATRIX_POST_TRANSLATE, recentsViewScroll.value);

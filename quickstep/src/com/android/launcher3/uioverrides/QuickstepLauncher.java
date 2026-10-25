@@ -24,7 +24,7 @@ import static android.view.accessibility.AccessibilityEvent.TYPE_VIEW_FOCUSED;
 import static com.android.app.animation.Interpolators.EMPHASIZED;
 import static com.android.internal.jank.Cuj.CUJ_LAUNCHER_LAUNCH_APP_PAIR_FROM_WORKSPACE;
 import static com.android.launcher3.Flags.enableExpressiveDismissTaskMotion;
-import static com.android.launcher3.Flags.enableOverviewBackgroundWallpaperBlur;
+import static com.android.quickstep.util.OverviewBlurConfig.isOverviewWallpaperBlurEnabled;
 import static com.android.launcher3.Flags.enableUnfoldStateAnimation;
 import static com.android.launcher3.Flags.refactorTaskbarUiState;
 import static com.android.launcher3.LauncherConstants.SavedInstanceKeys.PENDING_SPLIT_SELECT_INFO;
@@ -82,11 +82,13 @@ import android.animation.Animator;
 import android.animation.AnimatorListenerAdapter;
 import android.animation.AnimatorSet;
 import android.app.ActivityOptions;
+import android.app.KeyguardManager;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentSender;
 import android.content.pm.ShortcutInfo;
 import android.content.res.Configuration;
+import android.graphics.Bitmap;
 import android.graphics.Rect;
 import android.graphics.RectF;
 import android.hardware.display.DisplayManager;
@@ -103,7 +105,9 @@ import android.view.HapticFeedbackConstants;
 import android.view.KeyEvent;
 import android.view.MotionEvent;
 import android.view.View;
+import android.view.ViewGroup;
 import android.widget.AnalogClock;
+import android.widget.ImageView;
 import android.widget.TextClock;
 import android.window.BackEvent;
 import android.window.DesktopExperienceFlags;
@@ -120,7 +124,9 @@ import androidx.annotation.RequiresApi;
 import com.android.app.viewcapture.ViewCaptureFactory;
 import com.android.launcher3.AbstractFloatingView;
 import com.android.launcher3.BuildConfig;
+import com.android.launcher3.CellLayout;
 import com.android.launcher3.DeviceProfile;
+import com.android.launcher3.celllayout.CellLayoutLayoutParams;
 import com.android.launcher3.Flags;
 import com.android.launcher3.GestureNavContract;
 import com.android.launcher3.InvariantDeviceProfile;
@@ -136,9 +142,11 @@ import com.android.launcher3.accessibility.LauncherAccessibilityDelegate;
 import com.android.launcher3.allapps.AllAppsRecyclerView;
 import com.android.launcher3.anim.AnimatorPlaybackController;
 import com.android.launcher3.anim.PendingAnimation;
+import com.android.launcher3.anim.PetalHomeUnlockAnimation;
 import com.android.launcher3.apppairs.AppPairIcon;
 import com.android.launcher3.appprediction.PredictionRowView;
 import com.android.launcher3.config.FeatureFlags;
+import com.android.launcher3.icons.BitmapRenderer;
 import com.android.launcher3.desktop.DesktopRecentsTransitionController;
 import com.android.launcher3.hybridhotseat.HotseatPredictionController;
 import com.android.launcher3.logging.InstanceId;
@@ -177,7 +185,11 @@ import com.android.launcher3.uioverrides.touchcontrollers.TaskViewTouchControlle
 import com.android.launcher3.uioverrides.touchcontrollers.TransposedQuickSwitchTouchController;
 import com.android.launcher3.uioverrides.touchcontrollers.TwoButtonNavbarTouchController;
 import com.android.launcher3.util.ActivityOptionsWrapper;
+import com.android.launcher3.views.BaseDragLayer;
+import com.android.launcher3.PetalLauncherPrefs;
 import com.android.launcher3.util.DisplayController;
+import com.android.launcher3.util.ScreenOnTracker;
+import com.android.launcher3.util.ScreenOnTracker.ScreenOnListener;
 import com.android.launcher3.util.IntSet;
 import com.android.launcher3.util.NavigationMode;
 import com.android.launcher3.util.ObjectWrapper;
@@ -207,6 +219,7 @@ import com.android.quickstep.util.ActiveGestureProtoLogProxy;
 import com.android.quickstep.util.AnimUtils;
 import com.android.quickstep.util.AsyncClockEventDelegate;
 import com.android.quickstep.util.LauncherUnfoldAnimationController;
+import com.android.quickstep.util.OverviewToHomeAnim;
 import com.android.quickstep.util.QuickstepOnboardingPrefs;
 import com.android.quickstep.util.SplitSelectStateController;
 import com.android.quickstep.util.SplitTask;
@@ -225,6 +238,7 @@ import com.android.quickstep.window.RecentsWindowManager;
 import com.android.systemui.animation.back.FlingOnBackAnimationCallback;
 import com.android.systemui.plugins.shared.LauncherOverlayManager;
 import com.android.systemui.shared.recents.model.Task;
+import com.android.systemui.shared.system.smartspace.ILauncherUnlockAnimationController;
 import com.android.systemui.shared.system.ActivityManagerWrapper;
 import com.android.systemui.unfold.RemoteUnfoldSharedComponent;
 import com.android.systemui.unfold.UnfoldTransitionFactory;
@@ -266,6 +280,9 @@ public class QuickstepLauncher extends Launcher implements RecentsViewContainer,
     private PredictedContainerInfo mAllAppsPredictions;
     private HotseatPredictionController mHotseatPredictionController;
     private DepthController mDepthController;
+    private View mPetalDepthPopup;
+    private ImageView mPetalPopupPreview;
+    private Animator mPetalPopupDepthAnimator;
     private QuickstepTransitionManager mAppTransitionManager;
 
     private OverviewActionsView<?> mActionsView;
@@ -274,6 +291,87 @@ public class QuickstepLauncher extends Launcher implements RecentsViewContainer,
     // Will be updated when dragging from taskbar.
     private @Nullable UnfoldTransitionProgressProvider mUnfoldTransitionProgressProvider;
     private @Nullable LauncherUnfoldAnimationController mLauncherUnfoldAnimationController;
+    private boolean mPendingHomeUnlock;
+    private boolean mSystemUiUnlockPrepared;
+    private float mHomeUnlockOriginX = 0.5f;
+    private float mHomeUnlockOriginY = 1f;
+    private static final long UNLOCK_ROW_STAGGER_MS = 24;
+    private static final long UNLOCK_ICON_STAGGER_MS = 6;
+    private final PetalHomeUnlockAnimation mHomeUnlockAnimation = new PetalHomeUnlockAnimation();
+    private View mDrawerAnimatedView;
+    private final ILauncherUnlockAnimationController mHomeUnlockController =
+            new ILauncherUnlockAnimationController.Stub() {
+                @Override
+                public void prepareForUnlock(boolean animateSmartspace, Rect bounds,
+                        int selectedPage) {
+                    runOnUiThread(() -> {
+                        if (!PetalLauncherPrefs.enabled(QuickstepLauncher.this,
+                                PetalLauncherPrefs.UNLOCK_ANIMATION)) return;
+                        prepareHomeUnlockAnimation();
+                        mSystemUiUnlockPrepared = true;
+                    });
+                }
+
+                @Override
+                public void setUnlockAmount(float amount, boolean forceIfAnimating) {
+                    if (amount >= 1f) {
+                        runOnUiThread(() -> {
+                            if (mPendingHomeUnlock) resetHomeUnlockAnimation();
+                        });
+                    }
+                }
+
+                @Override
+                public void playUnlockAnimation(boolean unlocked, long duration, long startDelay) {
+                    runOnUiThread(() -> {
+                        if (unlocked) {
+                            playHomeUnlockAnimation(duration, startDelay);
+                        } else {
+                            resetHomeUnlockAnimation();
+                        }
+                    });
+                }
+
+                @Override
+                public void setUnlockOrigin(float x, float y) {
+                    runOnUiThread(() -> {
+                        if (!Float.isFinite(x) || !Float.isFinite(y)) return;
+                        mHomeUnlockOriginX = Math.max(0f, Math.min(1f, x));
+                        mHomeUnlockOriginY = Math.max(0f, Math.min(1f, y));
+                    });
+                }
+
+                @Override
+                public void setSmartspaceSelectedPage(int selectedPage) { }
+
+                @Override
+                public void setSmartspaceVisibility(int visibility) { }
+
+                @Override
+                public void dispatchSmartspaceStateToSysui() { }
+            };
+    private final ScreenOnListener mHomeUnlockListener = new ScreenOnListener() {
+        @Override
+        public void onScreenOnChanged(boolean isOn) { }
+
+        @Override
+        public void onUserPresent() {
+            if (!PetalLauncherPrefs.enabled(QuickstepLauncher.this,
+                    PetalLauncherPrefs.UNLOCK_ANIMATION)) return;
+            if (!mPendingHomeUnlock) return;
+            if (mSystemUiUnlockPrepared) return;
+            if (hasBeenResumed() && isInState(NORMAL)) {
+                getWorkspace().post(() -> playHomeUnlockAnimation(700, 0));
+            } else {
+                // Some keyguard paths send USER_PRESENT before Launcher resumes.
+                getWorkspace().postDelayed(() -> {
+                    if (mPendingHomeUnlock && !hasBeenResumed()) {
+                        resetHomeUnlockAnimation();
+                    }
+                }, 1500);
+            }
+        }
+    };
 
     private SplitSelectStateController mSplitSelectStateController;
     private SplitWithKeyboardShortcutController mSplitWithKeyboardShortcutController;
@@ -508,12 +606,12 @@ public class QuickstepLauncher extends Launcher implements RecentsViewContainer,
     @Override
     public boolean isOverviewBackgroundBlurEnabled() {
         return mDepthController != null && mDepthController.isCrossWindowBlursEnabled()
-                && enableOverviewBackgroundWallpaperBlur();
+                && isOverviewWallpaperBlurEnabled();
     }
 
     /** Apply the blur or blur fallback style to the current theme. */
     public void updateBlurStyle() {
-        if (enableOverviewBackgroundWallpaperBlur()) {
+        if (isOverviewWallpaperBlurEnabled()) {
             if (isOverviewBackgroundBlurEnabled() != mOverviewBlurEnabled) {
                 mWallpaperThemeManager.recreateToUpdateTheme();
             }
@@ -681,6 +779,17 @@ public class QuickstepLauncher extends Launcher implements RecentsViewContainer,
 
     @Override
     public void onDestroy() {
+        if (mPetalPopupDepthAnimator != null) {
+            mPetalPopupDepthAnimator.cancel();
+        }
+        if (mPetalPopupPreview != null) {
+            getDragLayer().removeView(mPetalPopupPreview);
+            mPetalPopupPreview = null;
+        }
+        mPetalDepthPopup = null;
+        SystemUiProxy.INSTANCE.get(this).setLauncherUnlockAnimationController(null, null);
+        ScreenOnTracker.INSTANCE.get(this).removeListener(mHomeUnlockListener);
+        resetHomeUnlockAnimation();
         if (mAppTransitionManager != null) {
             mAppTransitionManager.onActivityDestroyed();
         }
@@ -717,6 +826,9 @@ public class QuickstepLauncher extends Launcher implements RecentsViewContainer,
     @Override
     public void onStateSetEnd(LauncherState state) {
         super.onStateSetEnd(state);
+        if (state != NORMAL && mPendingHomeUnlock) {
+            resetHomeUnlockAnimation();
+        }
         handlePendingActivityRequest();
 
         switch (state.ordinal) {
@@ -829,6 +941,9 @@ public class QuickstepLauncher extends Launcher implements RecentsViewContainer,
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        SystemUiProxy.INSTANCE.get(this).setLauncherUnlockAnimationController(
+                getComponentName().getClassName(), mHomeUnlockController);
+        ScreenOnTracker.INSTANCE.get(this).addListener(mHomeUnlockListener);
         if (savedInstanceState != null) {
             mPendingSplitSelectInfo = ObjectWrapper.unwrap(
                     savedInstanceState.getIBinder(PENDING_SPLIT_SELECT_INFO));
@@ -942,6 +1057,14 @@ public class QuickstepLauncher extends Launcher implements RecentsViewContainer,
     protected void onResume() {
         super.onResume();
 
+        if (!PetalLauncherPrefs.enabled(this, PetalLauncherPrefs.UNLOCK_ANIMATION)
+                && mPendingHomeUnlock) resetHomeUnlockAnimation();
+
+        if (mPendingHomeUnlock && !mSystemUiUnlockPrepared && isInState(NORMAL)
+                && !getSystemService(KeyguardManager.class).isKeyguardLocked()) {
+            getWorkspace().post(() -> playHomeUnlockAnimation(700, 0));
+        }
+
         if (mLauncherUnfoldAnimationController != null) {
             mLauncherUnfoldAnimationController.onResume();
         }
@@ -958,6 +1081,10 @@ public class QuickstepLauncher extends Launcher implements RecentsViewContainer,
         }
 
         super.onPause();
+
+        if (!mPendingHomeUnlock) {
+            resetHomeUnlockAnimation();
+        }
 
         // If Launcher pauses before both split apps are selected, exit split screen.
         if (!mSplitSelectStateController.isBothSplitAppsConfirmed() &&
@@ -979,6 +1106,140 @@ public class QuickstepLauncher extends Launcher implements RecentsViewContainer,
         super.onStop();
         if (mTaskbarInteractor != null && FeatureFlags.enableHomeTransitionListener()) {
             mTaskbarInteractor.onLauncherStop();
+        }
+    }
+
+    @Override
+    protected void onScreenOnChanged(boolean isOn) {
+        boolean wasOnHome = !isOn && isInState(NORMAL);
+        super.onScreenOnChanged(isOn);
+        if (wasOnHome && PetalLauncherPrefs.enabled(this,
+                PetalLauncherPrefs.UNLOCK_ANIMATION)) {
+            prepareHomeUnlockAnimation();
+        }
+    }
+
+    @Override
+    public void onWindowFocusChanged(boolean hasFocus) {
+        super.onWindowFocusChanged(hasFocus);
+        if (!hasFocus && isInState(NORMAL)
+                && getSystemService(KeyguardManager.class).isKeyguardLocked()
+                && PetalLauncherPrefs.enabled(this, PetalLauncherPrefs.UNLOCK_ANIMATION)) {
+            prepareHomeUnlockAnimation();
+        } else if (hasFocus && mPendingHomeUnlock && !mSystemUiUnlockPrepared
+                && !getSystemService(KeyguardManager.class).isKeyguardLocked()) {
+            getWorkspace().post(() -> playHomeUnlockAnimation(700, 0));
+        }
+    }
+
+    private void prepareHomeUnlockAnimation() {
+        if (!PetalLauncherPrefs.enabled(this, PetalLauncherPrefs.UNLOCK_ANIMATION)) return;
+        if (mPendingHomeUnlock || getWorkspace() == null) return;
+        resetHomeUnlockAnimation();
+        mPendingHomeUnlock = true;
+        // Wallpaper stays put while the icons get their shit together.
+        getWorkspace().setAlpha(0f);
+        getHotseat().setAlpha(0f);
+    }
+
+    private void playHomeUnlockAnimation(long duration, long startDelay) {
+        if (!PetalLauncherPrefs.enabled(this, PetalLauncherPrefs.UNLOCK_ANIMATION)) {
+            resetHomeUnlockAnimation();
+            return;
+        }
+        if (!mPendingHomeUnlock) return;
+        if (!isInState(NORMAL)) {
+            resetHomeUnlockAnimation();
+            return;
+        }
+
+        mPendingHomeUnlock = false;
+        mSystemUiUnlockPrepared = false;
+        View root = getDragLayer().getRootView();
+        int[] rootLocation = new int[2];
+        root.getLocationOnScreen(rootLocation);
+        float originX = rootLocation[0] + root.getWidth() * mHomeUnlockOriginX;
+        float originY = rootLocation[1] + root.getHeight() * mHomeUnlockOriginY;
+        mHomeUnlockOriginX = 0.5f;
+        mHomeUnlockOriginY = 1f;
+        long itemDuration = Math.max(480, Math.min(640, duration));
+        int totalRows = getDeviceProfile().inv.numRows;
+        CellLayout page = (CellLayout) getWorkspace().getPageAt(getWorkspace().getCurrentPage());
+        if (page != null) {
+            ViewGroup content = page.getShortcutsAndWidgets();
+            for (int i = 0; i < content.getChildCount(); i++) {
+                View item = content.getChildAt(i);
+                mHomeUnlockAnimation.add(item, homeUnlockDelay(item, startDelay, totalRows),
+                        itemDuration, item instanceof android.appwidget.AppWidgetHostView,
+                        originX, originY);
+            }
+        }
+
+        ViewGroup dock = getHotseat().getShortcutsAndWidgets();
+        for (int i = 0; i < dock.getChildCount(); i++) {
+            View item = dock.getChildAt(i);
+            mHomeUnlockAnimation.add(item, startDelay + i * UNLOCK_ICON_STAGGER_MS,
+                    itemDuration, false, originX, originY);
+        }
+
+        View indicator = getWorkspace().getPageIndicator();
+        if (indicator != null) {
+            mHomeUnlockAnimation.add(indicator, startDelay, itemDuration, true, originX, originY);
+        }
+        mHomeUnlockAnimation.start();
+        getWorkspace().setAlpha(1f);
+        getHotseat().setAlpha(1f);
+    }
+
+    // bottom row first, then a little ripple across each row
+    private long homeUnlockDelay(View item, long baseDelay, int totalRows) {
+        if (!(item.getLayoutParams() instanceof CellLayoutLayoutParams)) return baseDelay;
+        CellLayoutLayoutParams lp = (CellLayoutLayoutParams) item.getLayoutParams();
+        int row = Math.max(0, totalRows - Math.min(totalRows, lp.getCellY() + lp.cellVSpan));
+        return baseDelay + row * UNLOCK_ROW_STAGGER_MS
+                + Math.max(0, lp.getCellX()) * UNLOCK_ICON_STAGGER_MS;
+    }
+
+    private void resetHomeUnlockAnimation() {
+        mPendingHomeUnlock = false;
+        mSystemUiUnlockPrepared = false;
+        mHomeUnlockOriginX = 0.5f;
+        mHomeUnlockOriginY = 1f;
+        mHomeUnlockAnimation.cancel();
+        if (getWorkspace() != null) getWorkspace().setAlpha(1f);
+        if (getHotseat() != null) getHotseat().setAlpha(1f);
+    }
+
+    @Override
+    public void onStateSetStart(LauncherState state) {
+        if (state != NORMAL) resetHomeUnlockAnimation();
+        super.onStateSetStart(state);
+        resetDrawerEntrance();
+        if (state == ALL_APPS && PetalLauncherPrefs.enabled(this,
+                PetalLauncherPrefs.DRAWER_ANIMATION)) {
+            getAppsView().post(this::playDrawerEntrance);
+        }
+    }
+
+    private void playDrawerEntrance() {
+        if (!isInState(ALL_APPS)) return;
+        AllAppsRecyclerView recycler = getAppsView().getActiveRecyclerView();
+        if (recycler == null) return;
+        float lift = 28f * getResources().getDisplayMetrics().density;
+        recycler.animate().cancel();
+        recycler.setAlpha(0f);
+        recycler.setTranslationY(lift);
+        mDrawerAnimatedView = recycler;
+        recycler.animate().alpha(1f).translationY(0f)
+                .setDuration(440).setInterpolator(EMPHASIZED).start();
+    }
+
+    private void resetDrawerEntrance() {
+        if (mDrawerAnimatedView != null) {
+            mDrawerAnimatedView.animate().cancel();
+            mDrawerAnimatedView.setAlpha(1f);
+            mDrawerAnimatedView.setTranslationY(0f);
+            mDrawerAnimatedView = null;
         }
     }
 
@@ -1347,6 +1608,50 @@ public class QuickstepLauncher extends Launcher implements RecentsViewContainer,
         return mDepthController;
     }
 
+    @Override
+    public void onPetalEditDrag(boolean dragging) {
+        if (mDepthController != null) {
+            mDepthController.editDragDepth.animateToValue(dragging ? 0.25f : 0f)
+                    .setDuration(dragging ? 180 : 220).start();
+        }
+    }
+
+    @Override
+    public void onPetalPopupDepth(View popup, View selected, boolean showing) {
+        if (mDepthController == null || (!showing && popup != mPetalDepthPopup)) {
+            return;
+        }
+        if (mPetalPopupDepthAnimator != null) {
+            mPetalPopupDepthAnimator.cancel();
+        }
+        if (mPetalPopupPreview != null) {
+            getDragLayer().removeView(mPetalPopupPreview);
+            mPetalPopupPreview = null;
+        }
+        mPetalDepthPopup = showing ? popup : null;
+        if (showing && selected.getWidth() > 0 && selected.getHeight() > 0) {
+            // Keep this one crisp while the rest gets frosted.
+            Bitmap bitmap = BitmapRenderer.createHardwareBitmap(
+                    selected.getWidth(), selected.getHeight(), selected::draw);
+            Rect bounds = new Rect();
+            getDragLayer().getDescendantRectRelativeToSelf(selected, bounds);
+            mPetalPopupPreview = new ImageView(this);
+            mPetalPopupPreview.setImageBitmap(bitmap);
+            mPetalPopupPreview.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+            BaseDragLayer.LayoutParams params =
+                    new BaseDragLayer.LayoutParams(bounds.width(), bounds.height());
+            params.customPosition = true;
+            params.x = bounds.left;
+            params.y = bounds.top;
+            // Under the menu, or a big widget paints right over the damn thing.
+            getDragLayer().addView(mPetalPopupPreview,
+                    Math.max(0, getDragLayer().indexOfChild(popup)), params);
+        }
+        mPetalPopupDepthAnimator = mDepthController.popupDepth.animateToValue(showing ? 0.45f : 0f)
+                .setDuration(showing ? 180 : 160);
+        mPetalPopupDepthAnimator.start();
+    }
+
     @Nullable
     public UnfoldTransitionProgressProvider getUnfoldTransitionProgressProvider() {
         return mUnfoldTransitionProgressProvider;
@@ -1566,6 +1871,12 @@ public class QuickstepLauncher extends Launcher implements RecentsViewContainer,
                     LAUNCHER_SPLIT_SELECTION_EXIT_HOME,
                     mSplitSelectStateController.getSplitAnimationController(),
                     onHomeAnimationComplete);
+        } else if (animated && isInState(OVERVIEW)
+                && PetalLauncherPrefs.enabled(this, PetalLauncherPrefs.HOME_ANIMATION)) {
+            new OverviewToHomeAnim(this,
+                    () -> {
+                        if (onHomeAnimationComplete != null) onHomeAnimationComplete.run();
+                    }, null).animateWithVelocity(-1f);
         } else {
             stateManager.goToState(NORMAL, animated,
                     onHomeAnimationComplete != null ? forEndCallback(onHomeAnimationComplete)

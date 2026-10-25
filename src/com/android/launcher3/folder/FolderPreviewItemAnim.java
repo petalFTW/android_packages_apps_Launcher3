@@ -54,18 +54,17 @@ class FolderPreviewItemAnim {
 
     public final float[] finalState;
 
-    /**
-     * @param params layout params to animate
-     * @param index0 original index of the item to be animated
-     * @param items0 original number of items in the preview
-     * @param index1 new index of the item to be animated
-     * @param items1 new number of items in the preview
-     * @param duration duration in ms of the animation
-     * @param onCompleteRunnable runnable to execute upon animation completion
-     */
+    // the ordinary drop path starts at the supplied grid slot
     FolderPreviewItemAnim(PreviewItemManager itemManager,
             PreviewItemDrawingParams params, int index0, int items0, int index1, int items1,
-            int duration, final Runnable onCompleteRunnable) {
+             int duration, final Runnable onCompleteRunnable) {
+        this(itemManager, params, index0, items0, index1, items1, duration,
+                onCompleteRunnable, false);
+    }
+
+    FolderPreviewItemAnim(PreviewItemManager itemManager,
+            PreviewItemDrawingParams params, int index0, int items0, int index1, int items1,
+            int duration, final Runnable onCompleteRunnable, boolean fromCurrent) {
         mItemManager = itemManager;
         mParams = params;
         mParams.index = index1;
@@ -74,7 +73,9 @@ class FolderPreviewItemAnim {
         finalState = new float[] {sTmpParams.scale, sTmpParams.transX, sTmpParams.transY};
 
         mItemManager.computePreviewItemDrawingParams(index0, items0, sTmpParams);
-        float[] startState = new float[] {sTmpParams.scale, sTmpParams.transX, sTmpParams.transY};
+        float[] startState = fromCurrent
+                ? new float[] {mParams.scale, mParams.transX, mParams.transY}
+                : new float[] {sTmpParams.scale, sTmpParams.transX, sTmpParams.transY};
 
         mAnimator = ObjectAnimator.ofObject(this, PARAMS, new FloatArrayEvaluator(),
                 startState, finalState);
@@ -88,6 +89,7 @@ class FolderPreviewItemAnim {
             }
         });
         mAnimator.setDuration(duration);
+        mAnimator.setInterpolator(com.android.app.animation.Interpolators.EMPHASIZED);
     }
 
     private void setParams(float[] values) {

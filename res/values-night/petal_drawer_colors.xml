@@ -1,5 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="petal_drawer_search_fill">#663C3C3C</color>
-    <color name="petal_drawer_search_stroke">#26FFFFFF</color>
+    <color name="petal_drawer_search_fill">#E6222430</color>
+    <color name="petal_drawer_search_stroke">#33FFFFFF</color>
+    <color name="petal_edit_surface">#E6222430</color>
+    <color name="petal_edit_text">#F5F5F8</color>
+    <color name="petal_dock_fill">#30222430</color>
+    <color name="petal_dock_rim">#33FFFFFF</color>
 </resources>

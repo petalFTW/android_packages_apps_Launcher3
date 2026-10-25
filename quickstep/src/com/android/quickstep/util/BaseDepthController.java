@@ -17,7 +17,7 @@ package com.android.quickstep.util;
 
 import static android.os.Trace.TRACE_TAG_APP;
 
-import static com.android.launcher3.Flags.enableOverviewBackgroundWallpaperBlur;
+import static com.android.quickstep.util.OverviewBlurConfig.isOverviewWallpaperBlurEnabled;
 
 import android.app.WallpaperManager;
 import android.graphics.RenderEffect;
@@ -73,7 +73,9 @@ public class BaseDepthController {
 
     private static final int DEPTH_INDEX_STATE_TRANSITION = 0;
     private static final int DEPTH_INDEX_WIDGET = 1;
-    private static final int DEPTH_INDEX_COUNT = 2;
+    private static final int DEPTH_INDEX_EDIT_DRAG = 2;
+    private static final int DEPTH_INDEX_POPUP = 3;
+    private static final int DEPTH_INDEX_COUNT = 4;
 
     // b/291401432
     private static final String TAG = "BaseDepthController";
@@ -83,6 +85,9 @@ public class BaseDepthController {
     public final MultiProperty stateDepth;
     /** Property to set the depth for widget picker. */
     public final MultiProperty widgetDepth;
+    /** Temporary wallpaper blur while moving an icon in home edit mode. */
+    public final MultiProperty editDragDepth;
+    public final MultiProperty popupDepth;
 
     /**
      * Blur radius when completely zoomed out, in pixels.
@@ -131,7 +136,7 @@ public class BaseDepthController {
 
     public BaseDepthController(QuickstepLauncher activity) {
         mLauncher = activity;
-        if (Flags.allAppsBlur() || enableOverviewBackgroundWallpaperBlur()) {
+        if (Flags.allAppsBlur() || isOverviewWallpaperBlurEnabled()) {
             mCrossWindowBlursEnabled =
                     CrossWindowBlurListeners.getInstance().isCrossWindowBlurEnabled();
             mMaxBlurRadius = Math.round(activity.getResources().getDimensionPixelSize(
@@ -146,6 +151,8 @@ public class BaseDepthController {
                 new MultiPropertyFactory<>(this, DEPTH, DEPTH_INDEX_COUNT, Float::max);
         stateDepth = depthProperty.get(DEPTH_INDEX_STATE_TRANSITION);
         widgetDepth = depthProperty.get(DEPTH_INDEX_WIDGET);
+        editDragDepth = depthProperty.get(DEPTH_INDEX_EDIT_DRAG);
+        popupDepth = depthProperty.get(DEPTH_INDEX_POPUP);
         mEarlyWakeupInfo.token = new Binder();
         mEarlyWakeupInfo.trace = BaseDepthController.class.getName();
     }
@@ -228,7 +235,7 @@ public class BaseDepthController {
 
         float blurAmount = mapDepthToBlur(depth);
         SurfaceControl blurSurface =
-                enableOverviewBackgroundWallpaperBlur() && mBlurSurface != null ? mBlurSurface
+                isOverviewWallpaperBlurEnabled() && mBlurSurface != null ? mBlurSurface
                         : mBaseSurface;
 
         int previousBlur = mCurrentBlur;
@@ -311,7 +318,10 @@ public class BaseDepthController {
     /** @return {@code true} if the workspace should be blurred. */
     @VisibleForTesting
     public boolean blurWorkspaceDepthTargets() {
-        if (!Flags.allAppsBlur()) {
+        boolean popupShowing = popupDepth.getValue() > 0f;
+        if (!Flags.allAppsBlur() && !popupShowing) {
+            mLauncher.getDepthBlurTargets().forEach(target -> target.setRenderEffect(null));
+            mLauncher.getAppsView().setRenderEffect(null);
             return false;
         }
         StateManager<LauncherState, Launcher> stateManager = mLauncher.getStateManager();
@@ -319,7 +329,7 @@ public class BaseDepthController {
                 ? stateManager.getTargetState() : stateManager.getState();
         // Only blur workspace if the current state wants to blur based on the target state.
         boolean shouldBlurWorkspace =
-                stateManager.getCurrentStableState().shouldBlurWorkspace(targetState);
+                popupShowing || stateManager.getCurrentStableState().shouldBlurWorkspace(targetState);
 
         RenderEffect blurEffect = shouldBlurWorkspace && mCurrentBlur > 0
                 ? RenderEffect.createBlurEffect(mCurrentBlur, mCurrentBlur, Shader.TileMode.DECAL)
@@ -331,6 +341,7 @@ public class BaseDepthController {
                 + " mCurrentBlur: " + mCurrentBlur
                 + " mLauncher.getDepthBlurTargets(): " + mLauncher.getDepthBlurTargets());
         mLauncher.getDepthBlurTargets().forEach(target -> target.setRenderEffect(blurEffect));
+        mLauncher.getAppsView().setRenderEffect(popupShowing ? blurEffect : null);
         return shouldBlurWorkspace;
     }
 
@@ -410,7 +421,7 @@ public class BaseDepthController {
             Log.d(TAG, "setSurface:\n\tmWaitingOnSurfaceValidity: " + mWaitingOnSurfaceValidity
                     + "\n\tmBaseSurface: " + mBaseSurface);
             SurfaceTransaction transaction = null;
-            if (enableOverviewBackgroundWallpaperBlur()) {
+            if (isOverviewWallpaperBlurEnabled()) {
                 transaction = setupBlurSurface();
             }
             applyDepthAndBlur(transaction, /* applyImmediately */ false,

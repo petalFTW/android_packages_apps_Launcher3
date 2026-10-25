@@ -33,8 +33,7 @@
     launcher:focusBorderColor="@color/materialColorSecondary">
 
     <!-- ignoring warning because the user of the anchor is a Rect where RTL is not needed -->
-    <!-- This anchor's bounds is in the expected location after rotations and translations are
-    applied to the parent. The same is not true of the parent so an anchor is used. -->
+    <!-- parent bounds go wonky after rotation, use this little anchor -->
     <!-- marginTop is applied in java to get the gap between chip and menu -->
     <View
         android:id="@+id/icon_view_menu_anchor"
@@ -67,13 +66,5 @@
         android:marqueeRepeatLimit="1"
         android:scrollHorizontally="true"
         style="@style/IconAppChipMenuTextStyle" />
-
-    <ImageView
-        android:id="@+id/icon_arrow"
-        android:layout_width="@dimen/task_thumbnail_icon_menu_arrow_size"
-        android:layout_height="@dimen/task_thumbnail_icon_menu_arrow_size"
-        android:background="@drawable/icon_menu_arrow_background"
-        android:src="@drawable/ic_chevron_down"
-        android:importantForAccessibility="no" />
 
 </com.android.quickstep.views.IconAppChipView>

@@ -58,10 +58,7 @@ public class OverviewActionsView<T extends OverlayUICallbacks> extends FrameLayo
     public static final String TAG = "OverviewActionsView";
     private final Rect mInsets = new Rect();
 
-    /**
-     * We need to over-ride here due to liveTile mode, the [OverviewInputConsumer] is added, which
-     * consumes all [InputEvent]'s and focus isn't moved correctly.
-     */
+    // live tile eats the keys, move focus ourselves
     @Override
     public boolean dispatchKeyEvent(KeyEvent event) {
         if (event.getAction() != KeyEvent.ACTION_DOWN) return super.dispatchKeyEvent(event);
@@ -131,10 +128,7 @@ public class OverviewActionsView<T extends OverlayUICallbacks> extends FrameLayo
     public @interface SplitButtonHiddenFlags { }
     public static final int FLAG_SMALL_SCREEN_HIDE_SPLIT = 1 << 0;
 
-    /**
-     * Holds an AnimatedFloat for each alpha property, used to set or animate alpha values in
-     * {@link #mMultiValueAlphas}.
-     */
+    // one float per alpha knob
     private final AnimatedFloat[] mAlphaProperties = new AnimatedFloat[NUM_ALPHAS];
 
     /** Holds MultiValueAlpha values for all actions bars */
@@ -147,10 +141,7 @@ public class OverviewActionsView<T extends OverlayUICallbacks> extends FrameLayo
     /** Container for the action buttons below a focused, non-split Overview tile. */
     protected LinearLayout mActionButtons;
     private Button mSplitButton;
-    /**
-     * The "save app pair" button. Currently this is the only button that is not contained in
-     * mActionButtons, since it is the sole button that appears for a grouped task.
-     */
+    // grouped tasks get this button on its own
     private Button mSaveAppPairButton;
 
     @ActionsHiddenFlags
@@ -186,9 +177,7 @@ public class OverviewActionsView<T extends OverlayUICallbacks> extends FrameLayo
     @Override
     protected void onFinishInflate() {
         super.onFinishInflate();
-        // Initialize 2 view containers: one for single tasks, one for grouped tasks.
-        // These will take up the same space on the screen and alternate visibility as needed.
-        // Currently, the only grouped task action is "save app pairs".
+        // singles and pairs share the same spot
         mActionButtons = findViewById(R.id.action_buttons);
         mSaveAppPairButton = findViewById(R.id.action_save_app_pair);
         TypefaceUtils.setTypeface(mSaveAppPairButton, FontFamily.GSF_LABEL_LARGE);
@@ -197,8 +186,7 @@ public class OverviewActionsView<T extends OverlayUICallbacks> extends FrameLayo
         mMultiValueAlphas[GROUP_ACTIONS_ALPHAS] =
                 new MultiValueAlpha(mSaveAppPairButton, NUM_ALPHAS);
         Arrays.stream(mMultiValueAlphas).forEach(a -> a.setUpdateVisibility(true));
-        // To control alpha simultaneously on mActionButtons and any group action buttons, we set up
-        // an AnimatedFloat for each alpha property.
+        // fade both bars together or it looks janky
         for (int i = 0; i < NUM_ALPHAS; i++) {
             final int index = i;
             mAlphaProperties[index] = new AnimatedFloat(() -> {
@@ -208,21 +196,16 @@ public class OverviewActionsView<T extends OverlayUICallbacks> extends FrameLayo
             }, 1f /* initialValue */);
         }
 
-        // The screenshot button is implemented as a Button in launcher3 and NexusLauncher, but is
-        // an ImageButton in go launcher (does not share a common class with Button). Take care when
-        // casting this.
         View screenshotButton = findViewById(R.id.action_screenshot);
-        screenshotButton.setOnClickListener(this);
+        if (screenshotButton != null) {
+            screenshotButton.setOnClickListener(this);
+        }
         mSplitButton = findViewById(R.id.action_split);
         mSplitButton.setOnClickListener(this);
         mSaveAppPairButton.setOnClickListener(this);
     }
 
-    /**
-     * Set listener for callbacks on action button taps.
-     *
-     * @param callbacks for callbacks, or {@code null} to clear the listener.
-     */
+    // null clears the callbacks
     public void setCallbacks(T callbacks) {
         mCallbacks = callbacks;
     }
@@ -265,14 +248,7 @@ public class OverviewActionsView<T extends OverlayUICallbacks> extends FrameLayo
         mAlphaProperties[INDEX_HIDDEN_FLAGS_ALPHA].updateValue(isHidden ? 0 : 1);
     }
 
-    /**
-     * Updates the proper disabled flag to indicate whether OverviewActionsView should be enabled.
-     * Ignores DISABLED_ROTATED flag for determining enabled. Flag is used to enable/disable
-     * buttons individually, currently done for select button in subclass.
-     *
-     * @param disabledFlags The flag to update.
-     * @param enable        Whether to enable the disable flag: True will cause view to be disabled.
-     */
+    // rotation alone shouldn't kill the whole bar
     public void updateDisabledFlags(@ActionsDisabledFlags int disabledFlags, boolean enable) {
         if (enable) {
             mDisabledFlags |= disabledFlags;
@@ -283,13 +259,7 @@ public class OverviewActionsView<T extends OverlayUICallbacks> extends FrameLayo
         LayoutUtils.setViewEnabled(this, isEnabled);
     }
 
-    /**
-     * Updates a batch of flags to hide and show actions buttons when a grouped task (split screen)
-     * is focused.
-     * @param isGroupedTask True if the focused task is a grouped task.
-     * @param canSaveAppPair True if the focused task is a grouped task and can be saved as an app
-     *                      pair.
-     */
+    // pairs swap in their own actions
     public void updateForGroupedTask(boolean isGroupedTask, boolean canSaveAppPair) {
         Log.d(TAG, "updateForGroupedTask() called with: isGroupedTask = [" + isGroupedTask
                 + "], canSaveAppPair = [" + canSaveAppPair + "]");
@@ -339,12 +309,7 @@ public class OverviewActionsView<T extends OverlayUICallbacks> extends FrameLayo
         return mMultiValueAlphas[GROUP_ACTIONS_ALPHAS];
     }
 
-    /**
-     * Updates the proper flags to indicate whether the "Split screen" button should be hidden.
-     *
-     * @param flag   The flag to update.
-     * @param enable Whether to enable the hidden flag: True will cause view to be hidden.
-     */
+    // any hide flag wins, simple enough
     void updateSplitButtonHiddenFlags(@SplitButtonHiddenFlags int flag,
             boolean enable) {
         if (mSplitButton == null) return;

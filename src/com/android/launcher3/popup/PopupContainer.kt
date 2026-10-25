@@ -25,6 +25,7 @@ import androidx.annotation.CallSuper
 import com.android.launcher3.AbstractFloatingView
 import com.android.launcher3.DragSource
 import com.android.launcher3.DropTarget.DragObject
+import com.android.launcher3.Launcher
 import com.android.launcher3.R
 import com.android.launcher3.dragndrop.DragController
 import com.android.launcher3.dragndrop.DragOptions
@@ -45,6 +46,21 @@ open class PopupContainer<T>(context: Context?, val originalView: View, val item
     /** Here we hold the system shortcuts that we show for the Popup. */
     // TODO b/441320297
     var systemShortcutContainer: ViewGroup? = null
+
+    override fun show() {
+        super.show()
+        (mActivityContext as? Launcher)?.onPetalPopupDepth(this, originalView, true)
+    }
+
+    override fun animateClose() {
+        (mActivityContext as? Launcher)?.onPetalPopupDepth(this, originalView, false)
+        super.animateClose()
+    }
+
+    override fun onDetachedFromWindow() {
+        (mActivityContext as? Launcher)?.onPetalPopupDepth(this, originalView, false)
+        super.onDetachedFromWindow()
+    }
 
     /** If the distance the user drags surpasses this number, then we should start drag. */
     val startDragThreshold =

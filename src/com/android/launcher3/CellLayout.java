@@ -163,6 +163,8 @@ public class CellLayout extends ViewGroup {
     private int mGridVisualizationRoundingRadius;
     private float mGridAlpha = 0f;
     private int mGridColor = 0;
+    private boolean mEditModeGridVisible;
+    private final Paint mEditModeGridPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     protected float mSpringLoadedProgress = 0f;
     private float mScrollProgress = 0f;
 
@@ -491,6 +493,22 @@ public class CellLayout extends ViewGroup {
             mBackground.draw(canvas);
         }
 
+        if (mEditModeGridVisible) {
+            mEditModeGridPaint.setColor(ColorUtils.setAlphaComponent(mGridColor, 110));
+            mEditModeGridPaint.setStyle(Paint.Style.STROKE);
+            mEditModeGridPaint.setStrokeWidth(Utilities.dpToPx(1));
+            float inset = Utilities.dpToPx(4);
+            for (int x = 0; x < mCountX; x++) {
+                for (int y = 0; y < mCountY; y++) {
+                    cellToRect(x, y, 1, 1, mTempOnDrawCellToRect);
+                    squareInCell(mTempOnDrawCellToRect);
+                    mVisualizeGridRect.inset(inset, inset);
+                    canvas.drawRoundRect(mVisualizeGridRect, mGridVisualizationRoundingRadius,
+                            mGridVisualizationRoundingRadius, mEditModeGridPaint);
+                }
+            }
+        }
+
         if (DEBUG_VISUALIZE_OCCUPIED) {
             Rect cellBounds = new Rect();
             // Will contain the bounds of the cell including spacing between cells.
@@ -611,6 +629,14 @@ public class CellLayout extends ViewGroup {
         }
     }
 
+    // petalOS: a cell-tall tile looked like a coffin, so keep the grid square instead
+    private void squareInCell(Rect cell) {
+        float side = Math.min(cell.width(), cell.height());
+        float cx = cell.exactCenterX();
+        float cy = cell.exactCenterY();
+        mVisualizeGridRect.set(cx - side / 2f, cy - side / 2f, cx + side / 2f, cy + side / 2f);
+    }
+
     protected void visualizeGrid(Canvas canvas) {
         DeviceProfile dp = mActivity.getDeviceProfile();
         int paddingX = Math.min((mCellWidth - dp.getWorkspaceIconProfile().getIconSizePx()) / 2,
@@ -627,7 +653,7 @@ public class CellLayout extends ViewGroup {
             for (int i = 0; i < mCountX; i++) {
                 for (int j = 0; j < mCountY; j++) {
                     cellToRect(i, j, 1, 1, mTempOnDrawCellToRect);
-                    mVisualizeGridRect.set(mTempOnDrawCellToRect);
+                    squareInCell(mTempOnDrawCellToRect);
                     mVisualizeGridRect.inset(paddingX, paddingY);
                     mVisualizeGridPaint.setStyle(Paint.Style.FILL);
                     canvas.drawRoundRect(mVisualizeGridRect, mGridVisualizationRoundingRadius,
@@ -643,8 +669,15 @@ public class CellLayout extends ViewGroup {
                 CellLayoutLayoutParams params = mDragOutlines[i];
                 cellToRect(params.getCellX(), params.getCellY(), params.cellHSpan, params.cellVSpan,
                         mTempOnDrawCellToRect);
-                mVisualizeGridRect.set(mTempOnDrawCellToRect);
-                mVisualizeGridRect.inset(paddingX, paddingY);
+                if (params.cellHSpan == 1 && params.cellVSpan == 1) {
+                    // a single drop target gets the same square treatment as the grid
+                    squareInCell(mTempOnDrawCellToRect);
+                    int pad = Math.min(paddingX, paddingY);
+                    mVisualizeGridRect.inset(pad, pad);
+                } else {
+                    mVisualizeGridRect.set(mTempOnDrawCellToRect);
+                    mVisualizeGridRect.inset(paddingX, paddingY);
+                }
 
                 mVisualizeGridPaint.setAlpha(255);
                 mVisualizeGridPaint.setStyle(Paint.Style.STROKE);
@@ -745,6 +778,14 @@ public class CellLayout extends ViewGroup {
 
     public int getCountX() {
         return mCountX;
+    }
+
+    /** Shows the placement grid while the home screen is being edited. */
+    public void setEditModeGridVisible(boolean visible) {
+        if (mEditModeGridVisible != visible) {
+            mEditModeGridVisible = visible;
+            invalidate();
+        }
     }
 
     public int getCountY() {
@@ -861,7 +902,8 @@ public class CellLayout extends ViewGroup {
      * @param result Array of 2 ints to hold the x and y coordinate of the cell
      */
     public void pointToCellExact(int x, int y, int[] result) {
-        final int hStartPadding = getPaddingLeft();
+        final int hStartPadding = getPaddingLeft()
+                + (int) Math.ceil(getUnusedHorizontalSpace() / 2f);
         final int vStartPadding = getPaddingTop();
 
         result[0] = (x - hStartPadding) / (mCellWidth + mBorderSpace.x);

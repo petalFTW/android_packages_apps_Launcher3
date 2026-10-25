@@ -311,7 +311,18 @@ public class FolderIcon extends FrameLayout implements FloatingIconViewCompanion
     }
 
     public void performDestroyAnimation(Runnable onCompleteRunnable) {
-        // This will animate the final item in the preview to be full size.
+        android.animation.ValueAnimator plate = android.animation.ValueAnimator.ofFloat(1f, 0f);
+        plate.setDuration(200);
+        plate.setInterpolator(Interpolators.EMPHASIZED);
+        plate.addUpdateListener(animation -> mBackground.setOpacity((float) animation.getAnimatedValue()));
+        plate.start();
+        if (!mPreviewItemManager.hasPreviewItems()) {
+            animate().alpha(0f).scaleX(.84f).scaleY(.84f).setDuration(200)
+                    .setInterpolator(Interpolators.EMPHASIZED_ACCELERATE)
+                    .withEndAction(onCompleteRunnable).start();
+            return;
+        }
+        // grow the surviving app while the glass quietly gets out of its way
         mPreviewItemManager.createFirstItemAnimation(true /* reverse */, onCompleteRunnable)
                 .start();
     }
@@ -658,7 +669,9 @@ public class FolderIcon extends FrameLayout implements FloatingIconViewCompanion
      * Returns the list of items which should be visible in the preview
      */
     public List<ItemInfo> getPreviewItemsOnPage(int page) {
-        return mPreviewVerifier.setFolderInfo(mInfo).previewItemsForPage(page, mInfo.getContents());
+        ArrayList<ItemInfo> sorted = new ArrayList<>(mInfo.getContents());
+        sorted.sort(Folder.ITEM_POS_COMPARATOR);
+        return mPreviewVerifier.setFolderInfo(mInfo).previewItemsForPage(page, sorted);
     }
 
     @Override
@@ -680,7 +693,6 @@ public class FolderIcon extends FrameLayout implements FloatingIconViewCompanion
     }
 
     public void onItemsChanged(boolean animate) {
-        updatePreviewItems(false);
         updateDotInfo();
         setContentDescription(getAccessiblityTitle(mInfo.title));
         updatePreviewItems(animate);

@@ -165,10 +165,7 @@ public class TaskOverlayFactory {
                 return mTaskContainer.getThumbnailViewDeprecated().getThumbnail();
             }
         }
-        /**
-         * Returns whether the snapshot is real. If the device is locked for the user of the task,
-         * the snapshot used will be an app-theme generated snapshot instead of a real snapshot.
-         */
+        // locked apps use a fake snapshot, don't save that crap
         protected boolean isRealSnapshot() {
             if (enableRefactorTaskThumbnail()) {
                 if (mThumbnailData == null) return false;
@@ -229,11 +226,7 @@ public class TaskOverlayFactory {
             }
         }
 
-        /**
-         * End rendering live tile in Overview.
-         *
-         * @param callback callback to run, after switching to screenshot
-         */
+        // freeze the live tile before running the callback
         public void endLiveTileMode(@NonNull Runnable callback) {
             RecentsView recentsView =
                     mTaskContainer.getTaskView().getRecentsView();
@@ -310,11 +303,7 @@ public class TaskOverlayFactory {
             return new ScreenshotSystemShortcut(container, iteminfo, originalView);
         }
 
-        /**
-         * Gets the task snapshot as it is displayed on the screen.
-         *
-         * @return the bounds of the snapshot in screen coordinates.
-         */
+        // snapshot bounds in screen coords
         public Rect getTaskSnapshotBounds() {
             int[] location = new int[2];
             mTaskContainer.getSnapshotView().getLocationOnScreen(location);
@@ -324,11 +313,7 @@ public class TaskOverlayFactory {
                     mTaskContainer.getSnapshotView().getHeight() + location[1]);
         }
 
-        /**
-         * Gets the insets that the snapshot is drawn with.
-         *
-         * @return the insets in screen coordinates.
-         */
+        // snapshot insets, same screen coords
         @RequiresApi(api = Build.VERSION_CODES.Q)
         public Insets getTaskSnapshotInsets() {
             Bitmap thumbnail = getThumbnail();
@@ -345,9 +330,7 @@ public class TaskOverlayFactory {
             RectF viewRect = new RectF(0, 0, snapshotView.getMeasuredWidth(),
                     snapshotView.getMeasuredHeight());
 
-            // The position helper matrix tells us how to transform the bitmap to fit the view, the
-            // inverse tells us where the view would be in the bitmaps coordinates. The insets are
-            // the difference between the bitmap bounds and the projected view bounds.
+            // invert the matrix to find which bits got cropped
             Matrix boundsToBitmapSpace = new Matrix();
             Matrix thumbnailMatrix;
             if (enableRefactorTaskThumbnail()) {
@@ -438,10 +421,7 @@ public class TaskOverlayFactory {
         }
     }
 
-    /**
-     * Callbacks the Ui can generate. This is the only way for a Ui to call methods on the
-     * controller.
-     */
+    // UI pokes the controller through these
     public interface OverlayUICallbacks {
         /** User has indicated they want to screenshot the current task. */
         void onScreenshot();

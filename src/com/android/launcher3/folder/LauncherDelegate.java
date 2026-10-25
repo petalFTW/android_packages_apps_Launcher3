@@ -108,12 +108,8 @@ public class LauncherDelegate {
                 }
             }
         };
-        View finalChild = folder.mContent.getLastItem();
-        if (finalChild != null) {
-            folder.mFolderIcon.performDestroyAnimation(onCompleteRunnable);
-        } else {
-            onCompleteRunnable.run();
-        }
+        // an empty folder still deserves an exit, not a single-frame vanishing act
+        folder.mFolderIcon.performDestroyAnimation(onCompleteRunnable);
         return true;
     }
 

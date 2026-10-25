@@ -183,6 +183,8 @@ public class GridCustomizationsProxy implements ProxyProvider {
         }
 
         switch (path) {
+            case "/subject_icons":
+                return com.android.launcher3.petalos.SubjectIconStore.query(mContext);
             case KEY_SHAPE_OPTIONS: {
                 if (Flags.newCustomizationPickerUi()) {
                     MatrixCursor cursor = new MatrixCursor(new String[]{
@@ -282,6 +284,24 @@ public class GridCustomizationsProxy implements ProxyProvider {
 
     public int handleUpdate(@NonNull String path, ContentValues values) {
         switch (path) {
+            case "/subject_icons": {
+                String action = values.getAsString("action");
+                if ("style".equals(action)) {
+                    com.android.launcher3.petalos.SubjectIconStore.setStyle(
+                            mContext, values.getAsString("style"));
+                    return UPDATE_SETTING_SUCCESS;
+                }
+                if ("monochrome".equals(action)) {
+                    com.android.launcher3.petalos.SubjectIconStore.setMonochrome(
+                            mContext, Boolean.TRUE.equals(values.getAsBoolean("monochrome")));
+                    return UPDATE_SETTING_SUCCESS;
+                }
+                if (!Arrays.asList("generate", "enable", "disable", "clear", "default", "themed").contains(action)) {
+                    return UPDATE_SETTING_FAILURE;
+                }
+                com.android.launcher3.petalos.SubjectIconService.command(mContext, action);
+                return UPDATE_SETTING_SUCCESS;
+            }
             case KEY_DEFAULT_GRID: {
                 String gridName = values.getAsString(KEY_NAME);
                 gridName = gridName == null ? values.getAsString(KEY_GRID_NAME) : gridName;
@@ -319,10 +339,12 @@ public class GridCustomizationsProxy implements ProxyProvider {
             case ICON_THEMED:
             case SET_ICON_THEMED: {
                 if (values.getAsBoolean(BOOLEAN_VALUE)) {
+                    com.android.launcher3.petalos.SubjectIconService.cancelGeneration(mContext);
                     mThemePreference.setValue(MONO_THEME_VALUE);
                 } else {
                     mThemePreference.setValue(null, MONO_THEME_VALUE::equals);
                 }
+                com.android.launcher3.petalos.SubjectIconStore.INSTANCE.notify(mContext);
                 return UPDATE_SETTING_SUCCESS;
             }
             default:

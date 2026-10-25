@@ -266,6 +266,7 @@ public class Folder extends AbstractFloatingView implements ClipPathView, DragSo
     private KeyboardInsetAnimationCallback mKeyboardInsetAnimationCallback;
 
     private final @NonNull GradientDrawable mBackground;
+    private final PetalFolderGlass mPetalGlass = new PetalFolderGlass(this);
 
     /**
      * Used to inflate the Workspace from XML.
@@ -537,9 +538,7 @@ public class Folder extends AbstractFloatingView implements ClipPathView, DragSo
 
     @Override
     protected void onAttachedToWindow() {
-        // requestFocus() causes the focus onto the folder itself, which doesn't cause visual
-        // effect but the next arrow key can start the keyboard focus inside of the folder, not
-        // the folder itself.
+        // grab focus so the next arrow key goes inside the bloody folder
         requestFocus();
         super.onAttachedToWindow();
         mFolderName.addOnFocusChangeListener(this);
@@ -603,10 +602,7 @@ public class Folder extends AbstractFloatingView implements ClipPathView, DragSo
         }
     }
 
-    /**
-     * Show suggested folder title in FolderEditText if the first suggestion is non-empty, push
-     * rest of the suggestions to InputMethodManager.
-     */
+    // first suggestion is the hint, the keyboard gets the rest
     void showLabelSuggestions() {
         if (mInfo.suggestedFolderNames == null) {
             return;
@@ -1224,6 +1220,7 @@ public class Folder extends AbstractFloatingView implements ClipPathView, DragSo
     }
 
     private void updateItemLocationsInDatabaseBatch(boolean isBind) {
+        mInfo.getContents().sort(ITEM_POS_COMPARATOR);
         FolderGridOrganizer verifier = createFolderGridOrganizer(
                 mActivityContext.getDeviceProfile()
         ).setFolderInfo(mInfo);
@@ -1373,7 +1370,10 @@ public class Folder extends AbstractFloatingView implements ClipPathView, DragSo
         if (!mContent.areViewsBound()) {
             return;
         }
-        mContent.arrangeChildren(getIconsInReadingOrder());
+        ArrayList<View> views = getIconsInReadingOrder();
+        views.sort((a, b) -> ITEM_POS_COMPARATOR.compare(
+                (ItemInfo) a.getTag(), (ItemInfo) b.getTag()));
+        mContent.arrangeChildren(views);
         mItemsInvalidated = true;
     }
 
@@ -1562,6 +1562,8 @@ public class Folder extends AbstractFloatingView implements ClipPathView, DragSo
 
         rank = Utilities.boundToRange(rank, 0, mInfo.getContents().size());
         mInfo.getContents().add(rank, item);
+        mInfo.getContents().sort(ITEM_POS_COMPARATOR);
+        rank = mInfo.getContents().indexOf(item);
 
         if (!mSuppressContentUpdate) {
             FolderGridOrganizer verifier = createFolderGridOrganizer(
@@ -1759,11 +1761,17 @@ public class Folder extends AbstractFloatingView implements ClipPathView, DragSo
         }
     }
 
-    // Compares item position based on rank and position giving priority to the rank.
+    // names win, saved rank just breaks ties
     public static final Comparator<ItemInfo> ITEM_POS_COMPARATOR = new Comparator<ItemInfo>() {
 
         @Override
         public int compare(ItemInfo lhs, ItemInfo rhs) {
+            java.text.Collator collator = java.text.Collator.getInstance();
+            collator.setStrength(java.text.Collator.PRIMARY);
+            int name = collator.compare(
+                    lhs.title == null ? "" : lhs.title.toString(),
+                    rhs.title == null ? "" : rhs.title.toString());
+            if (name != 0) return name;
             if (lhs.rank != rhs.rank) {
                 return lhs.rank - rhs.rank;
             } else if (lhs.cellY != rhs.cellY) {
@@ -1827,10 +1835,7 @@ public class Folder extends AbstractFloatingView implements ClipPathView, DragSo
         return !mIsEditingName;
     }
 
-    /**
-     * Alternative to using {@link #getClipToOutline()} as it only works with derivatives of
-     * rounded rect.
-     */
+    // outlines can't clip the weird reveal shapes, use the actual path
     @Override
     public void setClipPath(Path clipPath) {
         mClipPath = clipPath;
@@ -1842,17 +1847,23 @@ public class Folder extends AbstractFloatingView implements ClipPathView, DragSo
         if (mClipPath != null) {
             int count = canvas.save();
             canvas.clipPath(mClipPath);
-            mBackground.draw(canvas);
+            drawPetalBackground(canvas);
             canvas.restoreToCount(count);
             super.dispatchDraw(canvas);
         } else {
-            mBackground.draw(canvas);
+            drawPetalBackground(canvas);
             super.dispatchDraw(canvas);
         }
     }
 
     public FolderPagedView getContent() {
         return mContent;
+    }
+
+    private void drawPetalBackground(Canvas canvas) {
+        android.graphics.Rect bounds = mBackground.getBounds();
+        mPetalGlass.draw(canvas, bounds.left, bounds.top, bounds.width(), bounds.height(),
+                mBackground.getCornerRadius(), mBackground.getAlpha());
     }
 
     @VisibleForTesting

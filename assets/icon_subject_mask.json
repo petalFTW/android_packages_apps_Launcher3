@@ -1,0 +1,13 @@
+{
+  "version": "e1f64ff8-v3",
+  "source_archive": "iconlab-v3-rom-replacement.zip",
+  "archive_sha256": "e710ca5091f621632cd9e3f055524adc1fbcfd81a7115fa26bc9f10b9a63605a",
+  "model_sha256": "e1f64ff84c13fa0ab0926199a0db1ef47da33422bc35e819c870d9d808d986ad",
+  "candidate": "final production epoch 12 (final-budget-epoch)",
+  "input": "input",
+  "output": "logits",
+  "size": 256,
+  "mean": [0.485, 0.456, 0.406],
+  "std": [0.229, 0.224, 0.225],
+  "threshold": 0.5
+}

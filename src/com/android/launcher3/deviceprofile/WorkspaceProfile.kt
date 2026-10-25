@@ -211,20 +211,23 @@ data class WorkspaceProfile(
             val cellLayoutWith =
                 ((deviceProperties.availableWidthPx - totalWorkspacePadding.x) / panelCount)
             val cellLayoutHeight = deviceProperties.availableHeightPx - totalWorkspacePadding.y
-            return Point(
+            val cellWidth =
                 DeviceProfile.calculateCellWidth(
                     // shortcutAndWidgetContainerWidth
                     cellLayoutWith - (cellLayoutPadding.left + cellLayoutPadding.right),
                     cellLayoutBorderSpacePx.x,
                     numColumns,
-                ),
+                )
+            val cellHeight =
                 DeviceProfile.calculateCellHeight(
                     // shortcutAndWidgetContainerHeight
                     cellLayoutHeight - (cellLayoutPadding.top + cellLayoutPadding.bottom),
                     cellLayoutBorderSpacePx.y,
                     numRows,
-                ),
-            )
+                )
+            // petalOS: home spots stay 1:1 whatever grid the user picks, we just center the rest
+            val side = min(cellWidth, cellHeight)
+            return Point(side, side)
         }
 
         fun insetPadding(paddings: Rect, insetsArgs: Rect): Pair<Rect, Rect> {
@@ -385,8 +388,9 @@ data class WorkspaceProfile(
             val iconDrawablePaddingOriginalPx = responsiveWorkspaceCellSpec.iconDrawablePadding
             var iconTextSizePx = responsiveWorkspaceCellSpec.iconTextSize
             var iconSizePx = responsiveWorkspaceCellSpec.iconSize
-            val cellWidthPx = responsiveWorkspaceWidthSpec.cellSizePx
-            val cellHeightPx = responsiveWorkspaceHeightSpec.cellSizePx
+            // Keep content sizing in sync with the square workspace geometry.
+            val cellWidthPx = cellSize.x
+            val cellHeightPx = cellSize.x
             var maxIconTextLineCount = responsiveWorkspaceCellSpec.iconTextMaxLineCount
 
             if (cellWidthPx < iconSizePx) {

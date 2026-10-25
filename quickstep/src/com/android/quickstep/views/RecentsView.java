@@ -37,7 +37,7 @@ import static com.android.launcher3.AbstractFloatingView.TYPE_REBIND_SAFE;
 import static com.android.launcher3.BaseActivity.STATE_HANDLER_INVISIBILITY_FLAGS;
 import static com.android.launcher3.Flags.enableDesktopExplodedView;
 import static com.android.launcher3.Flags.enableExpressiveDismissTaskMotion;
-import static com.android.launcher3.Flags.enableOverviewBackgroundWallpaperBlur;
+import static com.android.quickstep.util.OverviewBlurConfig.isOverviewWallpaperBlurEnabled;
 import static com.android.launcher3.Flags.enableOverviewDesktopTileWallpaperBackground;
 import static com.android.launcher3.Flags.enablePreventOverviewMouseDrag;
 import static com.android.launcher3.Flags.enableRefactorTaskThumbnail;
@@ -368,6 +368,7 @@ public abstract class RecentsView<
     public static final float SCROLL_VIBRATION_PRIMITIVE_SCALE = 0.6f;
     public static final VibrationEffect SCROLL_VIBRATION_FALLBACK =
             VibrationConstants.EFFECT_TEXTURE_TICK;
+    private static final float PETAL_STACK_TRANSLATION_FACTOR = 0.62f;
     public static final int UNBOUND_TASK_VIEW_ID = -1;
 
     /**
@@ -609,6 +610,7 @@ public abstract class RecentsView<
     private boolean mOverviewFullscreenEnabled;
     private boolean mOverviewSelectEnabled;
     private boolean mRoudaboutScaleApplied;
+    private int[] mPetalStackDrawingOrder;
 
     private boolean mShouldClampScrollOffset;
     private int mClampedScrollOffsetBound;
@@ -1538,6 +1540,9 @@ public abstract class RecentsView<
     }
 
     public boolean isTaskViewVisible(TaskView tv) {
+        if (isPetalStackActive()) {
+            return isStackTaskWithinBounds(tv, 0);
+        }
         if (showAsGrid()) {
             int screenStart = getPagedOrientationHandler().getPrimaryScroll(this);
             int screenEnd = screenStart + getPagedOrientationHandler().getMeasuredSize(this);
@@ -1546,6 +1551,25 @@ public abstract class RecentsView<
             // For now, just check if it's the active task or an adjacent task
             return Math.abs(indexOfChild(tv) - getNextPage()) <= 1;
         }
+    }
+
+    private boolean isPetalStackActive() {
+        return com.android.launcher3.petalos.PetalRecentsPrefs.isStack()
+                && !showAsGrid()
+                && !mContainer.getDeviceProfile().getDeviceProperties().isTablet();
+    }
+
+    private boolean isStackTaskWithinBounds(TaskView taskView, int extraSpace) {
+        RecentsPagedOrientationHandler handler = getPagedOrientationHandler();
+        float scale = handler.getPrimaryValue(taskView.getScaleX(), taskView.getScaleY());
+        float pivot = handler.getPrimaryValue(taskView.getPivotX(), taskView.getPivotY());
+        float translation = handler.getPrimaryValue(
+                taskView.getTranslationX(), taskView.getTranslationY());
+        float start = handler.getChildStart(taskView) + translation + pivot * (1f - scale);
+        float end = start + handler.getPrimarySize(taskView) * scale;
+        int screenStart = handler.getPrimaryScroll(this);
+        int screenEnd = screenStart + handler.getMeasuredSize(this);
+        return end >= screenStart - extraSpace && start <= screenEnd + extraSpace;
     }
 
     public boolean isTaskViewFullyVisible(TaskView tv) {
@@ -1728,6 +1752,9 @@ public abstract class RecentsView<
     @Override
     protected void onPageBeginTransition() {
         super.onPageBeginTransition();
+        if (com.android.launcher3.petalos.PetalRecentsPrefs.isStack() && isHandlingTouch()) {
+            vibrateForScroll();
+        }
         if (!mContainer.getDeviceProfile().getDeviceProperties().isTablet()) {
             mActionsView.updateDisabledFlags(OverviewActionsView.DISABLED_SCROLLING, true);
         }
@@ -2712,6 +2739,10 @@ public abstract class RecentsView<
             if (showAsGrid()) {
                 visible = isTaskViewWithinBounds(taskView, visibleStart, visibleEnd,
                         mTaskViewsDismissPrimaryTranslations.getOrDefault(taskView, 0));
+            } else if (isPetalStackActive()) {
+                // compressed cards can still be on screen three pages away
+                visible = isStackTaskWithinBounds(taskView,
+                        getPagedOrientationHandler().getPrimarySize(taskView) + mPageSpacing);
             } else {
                 visible = index >= lowerIndex && index <= upperIndex;
             }
@@ -4339,6 +4370,7 @@ public abstract class RecentsView<
                     }
                 }
                 updateCurrentTaskActionsVisibility();
+                updateRoudaboutScale();
                 onDismissAnimationEnds();
                 mPendingAnimation = null;
                 mTaskViewsDismissPrimaryTranslations.clear();
@@ -4431,10 +4463,7 @@ public abstract class RecentsView<
                         remoteTargetHandle ->
                                 remoteTargetHandle.getTaskViewSimulator()
                                         .taskPrimaryTranslation.value =
-                                        getPagedOrientationHandler().getPrimaryValue(
-                                                view.getTranslationX(),
-                                                view.getTranslationY()
-                                        ));
+                                        ((TaskView) view).getTranslationWithoutDepth());
                 redrawLiveTile();
             });
         }
@@ -6151,6 +6180,7 @@ public abstract class RecentsView<
             // notified.
             ((GroupedTaskView) runningTaskView).updateSplitBoundsConfig(mSplitBoundsConfig);
         }
+        updateRoudaboutScale();
     }
 
     /** Helper to avoid writing some for-loops to iterate over {@link #mRemoteTargetHandles} */
@@ -6213,7 +6243,7 @@ public abstract class RecentsView<
                         tx, null /* overlay */);
             }
         }
-        if (enableOverviewBackgroundWallpaperBlur()) {
+        if (isOverviewWallpaperBlurEnabled()) {
             mBlurUtils.setDrawLiveTileBelowRecents(false);
         }
         mRecentsAnimationController.finish(
@@ -6247,7 +6277,7 @@ public abstract class RecentsView<
         setCurrentTask(-1);
         mRecentsAnimationController = null;
         mSplitSelectStateController.setRecentsAnimationRunning(false);
-        if (enableOverviewBackgroundWallpaperBlur()) {
+        if (isOverviewWallpaperBlurEnabled()) {
             mBlurUtils.setDrawLiveTileBelowRecents(false);
         }
     }
@@ -6936,32 +6966,81 @@ public abstract class RecentsView<
     @Override
     protected void onScrollChanged(int l, int t, int oldl, int oldt) {
         super.onScrollChanged(l, t, oldl, oldt);
-        dispatchScrollChanged();
         updateRoudaboutScale();
+        dispatchScrollChanged();
     }
 
-    /**
-     * petalOS "Roudabout", adapted from Infinity-X's Scale effect.
-     *
-     * <p>The task nearest the current page is shown at full size. Cards smoothly recede to 85%
-     * over one card plus page spacing, which gives the carousel a roundabout-like depth effect.
-     * Quickstep may keep Launcher portrait-locked for landscape apps, so use the same active-touch
-     * axis handling as the source implementation.
-     */
+    @Override
+    protected int getChildDrawingOrder(int childCount, int drawingPosition) {
+        if (mPetalStackDrawingOrder != null && mPetalStackDrawingOrder.length == childCount) {
+            return mPetalStackDrawingOrder[drawingPosition];
+        }
+        return super.getChildDrawingOrder(childCount, drawingPosition);
+    }
+
+    private void updatePetalStackDrawingOrder(int currentScroll, int childCount) {
+        if (mPetalStackDrawingOrder == null || mPetalStackDrawingOrder.length != childCount) {
+            mPetalStackDrawingOrder = new int[childCount];
+            setChildrenDrawingOrderEnabled(true);
+        }
+        // far cards go behind, including while the gap closes
+        for (int i = 0; i < childCount; i++) {
+            int at = i;
+            while (at > 0 && shouldDrawPetalStackBefore(i, mPetalStackDrawingOrder[at - 1],
+                    currentScroll)) {
+                mPetalStackDrawingOrder[at] = mPetalStackDrawingOrder[at - 1];
+                at--;
+            }
+            mPetalStackDrawingOrder[at] = i;
+        }
+        invalidate();
+    }
+
+    private boolean shouldDrawPetalStackBefore(int a, int b, int currentScroll) {
+        boolean aTask = a < mPageScrolls.length && getChildAt(a) instanceof TaskView;
+        boolean bTask = b < mPageScrolls.length && getChildAt(b) instanceof TaskView;
+        if (aTask != bTask) return !aTask;
+        if (!aTask) return a > b;
+        float aDistance = Math.abs(getTaskDepthDistance(a, currentScroll));
+        float bDistance = Math.abs(getTaskDepthDistance(b, currentScroll));
+        return aDistance != bDistance ? aDistance > bDistance : a > b;
+    }
+
+    private float getTaskDepthDistance(int index, int currentScroll) {
+        View child = getChildAt(index);
+        float dismissTranslation = child instanceof TaskView taskView
+                ? taskView.getDepthDismissTranslation() : 0f;
+        return mPageScrolls[index] - currentScroll + dismissTranslation;
+    }
+
+    public void updateTaskDepth() {
+        if (com.android.launcher3.petalos.PetalRecentsPrefs.isStack()
+                || com.android.launcher3.petalos.PetalRecentsPrefs.isRoudabout()) {
+            updateRoudaboutScale();
+        }
+    }
+
+    // receding cards, using Quickstep's actual scroll axis
     private void updateRoudaboutScale() {
-        boolean active = com.android.launcher3.petalos.PetalRecentsPrefs.isRoudabout()
+        boolean stack = com.android.launcher3.petalos.PetalRecentsPrefs.isStack();
+        boolean active = (stack || com.android.launcher3.petalos.PetalRecentsPrefs.isRoudabout())
                 && !showAsGrid()
                 && !mContainer.getDeviceProfile().getDeviceProperties().isTablet();
         if (!active) {
+            if (mPetalStackDrawingOrder != null) {
+                mPetalStackDrawingOrder = null;
+                setChildrenDrawingOrderEnabled(false);
+            }
             if (mRoudaboutScaleApplied) {
                 mRoudaboutScaleApplied = false;
                 for (TaskView taskView : getTaskViews()) {
-                    taskView.setScaleX(1f);
-                    taskView.setScaleY(1f);
+                    taskView.setPetalStackTransform(1f, 0f);
                     taskView.updateFullscreenParams();
                 }
-                runActionOnRemoteHandles(remoteTargetHandle ->
-                        remoteTargetHandle.getTaskViewSimulator().recentsViewScale.value = 1f);
+                runActionOnRemoteHandles(remoteTargetHandle -> {
+                    remoteTargetHandle.getTaskViewSimulator().petalTaskScale = 1f;
+                    remoteTargetHandle.getTaskViewSimulator().petalTaskTranslation = 0f;
+                });
             }
             return;
         }
@@ -6975,22 +7054,21 @@ public abstract class RecentsView<
         }
         mRoudaboutScaleApplied = true;
 
-        boolean touchInLandscape = mOrientationState.getTouchRotation()
-                        != android.view.Surface.ROTATION_0
-                && mOrientationState.getTouchRotation() != android.view.Surface.ROTATION_180;
-        boolean layoutInLandscape = mOrientationState.getRecentsActivityRotation()
-                        != android.view.Surface.ROTATION_0
-                && mOrientationState.getRecentsActivityRotation()
-                        != android.view.Surface.ROTATION_180;
-        boolean verticalScroll = !mOrientationState.isRecentsActivityRotationAllowed()
-                && touchInLandscape && !layoutInLandscape;
-        int currentScroll = verticalScroll ? getScrollY() : getScrollX();
+        RecentsPagedOrientationHandler orientationHandler = getPagedOrientationHandler();
+        boolean verticalScroll = orientationHandler.getPrimaryValue(1f, 0f) == 0f;
+        int currentScroll = orientationHandler.getPrimaryScroll(this);
+        if (stack) {
+            updatePetalStackDrawingOrder(currentScroll, getChildCount());
+        } else if (mPetalStackDrawingOrder != null) {
+            mPetalStackDrawingOrder = null;
+            setChildrenDrawingOrderEnabled(false);
+        }
 
         int taskSize = 0;
         for (int i = 0; i < childCount; i++) {
             View child = getChildAt(i);
             if (child instanceof TaskView) {
-                taskSize = verticalScroll ? child.getHeight() : child.getWidth();
+                taskSize = orientationHandler.getPrimarySize(child);
                 break;
             }
         }
@@ -6999,27 +7077,30 @@ public abstract class RecentsView<
         }
 
         int scaleArea = taskSize + mPageSpacing;
-        RecentsPagedOrientationHandler orientationHandler = getPagedOrientationHandler();
         for (int i = 0; i < childCount; i++) {
             View child = getChildAt(i);
-            int scrollDelta = Math.abs(currentScroll - mPageScrolls[i]);
-            float scale = scrollDelta <= scaleArea
-                    ? Utilities.mapToRange(
-                            scrollDelta, 0, scaleArea, 1f, ROUDABOUT_MIN_SCALE, LINEAR)
+            float depthDistance = getTaskDepthDistance(i, currentScroll);
+            float scrollDelta = Math.abs(depthDistance);
+            float pageDistance = scrollDelta / scaleArea;
+            float minScale = stack ? Math.max(0.56f, 1f - 0.16f * pageDistance)
                     : ROUDABOUT_MIN_SCALE;
-            child.setScaleX(scale);
-            child.setScaleY(scale);
+            float scale = stack ? minScale : scrollDelta <= scaleArea
+                    ? Utilities.mapToRange(
+                            scrollDelta, 0, scaleArea, 1f, minScale, LINEAR)
+                    : minScale;
 
+            float shift = stack ? -depthDistance * PETAL_STACK_TRANSLATION_FACTOR : 0f;
             if (!(child instanceof TaskView taskView)) {
                 continue;
             }
+            // one transform for scrolling and gap-closing, no last-frame jump
+            taskView.setPetalStackTransform(scale, verticalScroll ? 0f : shift,
+                    verticalScroll ? shift : 0f);
             taskView.updateFullscreenParams();
             if (mRemoteTargetHandles == null) {
                 continue;
             }
 
-            float primaryScale = orientationHandler.getPrimaryValue(
-                    taskView.getScaleX(), taskView.getScaleY());
             int[] taskIds = taskView.getTaskIds();
             for (RemoteTargetHandle remoteTargetHandle : mRemoteTargetHandles) {
                 RemoteAnimationTargets targets =
@@ -7029,8 +7110,8 @@ public abstract class RecentsView<
                 }
                 for (int taskId : taskIds) {
                     if (targets.findTask(taskId) != null) {
-                        remoteTargetHandle.getTaskViewSimulator().recentsViewScale.value =
-                                primaryScale;
+                        remoteTargetHandle.getTaskViewSimulator().petalTaskScale = scale;
+                        remoteTargetHandle.getTaskViewSimulator().petalTaskTranslation = shift;
                         break;
                     }
                 }

@@ -104,8 +104,8 @@ data class FolderProfile(
                 cellWidthPx = folderCellWidthPx,
                 cellHeightPx = folderCellHeightPx,
                 labelTextScale = folderLabelTextScale,
-                numRows = inv.numFolderRows[typeIndex],
-                numColumns = inv.numFolderColumns[typeIndex],
+                numRows = 3,
+                numColumns = 3,
             )
         }
 
@@ -114,9 +114,7 @@ data class FolderProfile(
             folderCellHeightPx: Int,
             folderChildIconSizePx: Int,
         ): Int {
-            // TODO(b/235886078): workaround needed because of this bug
-            // Icons are 10% larger on XML than their visual size,
-            // so remove that extra space to get labels closer to the correct padding
+            // XML icons carry 10% empty space; don't let that shove the label down
             val drawablePadding: Int =
                 ((folderCellHeightPx - folderChildIconSizePx - textHeight)) / 3
             val iconSizeDiff: Int =
@@ -236,8 +234,8 @@ data class FolderProfile(
                 cellWidthPx = folderCellWidthPx,
                 cellHeightPx = folderCellHeightPx,
                 labelTextScale = folderLabelTextScale,
-                numRows = inv.numFolderRows[typeIndex],
-                numColumns = inv.numFolderColumns[typeIndex],
+                numRows = 3,
+                numColumns = 3,
             )
         }
 
@@ -286,8 +284,8 @@ data class FolderProfile(
                 cellWidthPx = folderChildIconSizePx + 2 * cellPaddingX,
                 cellHeightPx = folderCellHeightPx,
                 labelTextScale = folderLabelTextScale,
-                numRows = inv.numFolderRows[typeIndex],
-                numColumns = inv.numFolderColumns[typeIndex],
+                numRows = 3,
+                numColumns = 3,
             )
         }
 

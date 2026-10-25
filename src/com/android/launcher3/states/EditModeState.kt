@@ -25,20 +25,16 @@ import com.android.launcher3.views.ActivityContext
 class EditModeState(id: Int) : LauncherState(id, StatsLogManager.LAUNCHER_STATE_HOME, STATE_FLAGS) {
 
     companion object {
-        const val DEPTH_15_PERCENT = 0.15f
-
         private val STATE_FLAGS =
             (FLAG_MULTI_PAGE or
-                FLAG_WORKSPACE_INACCESSIBLE or
                 FLAG_DISABLE_RESTORE or
-                FLAG_WORKSPACE_ICONS_CAN_BE_DRAGGED or
-                FLAG_WORKSPACE_HAS_BACKGROUNDS)
+                FLAG_WORKSPACE_ICONS_CAN_BE_DRAGGED)
     }
 
     override fun getTransitionDuration(context: ActivityContext, isToState: Boolean) = 150
 
     override fun <T> getDepthUnchecked(context: T): Float where T : Context?, T : ActivityContext? {
-        return DEPTH_15_PERCENT
+        return 0f
     }
 
     override fun getWorkspaceScaleAndTranslation(launcher: Launcher): ScaleAndTranslation {
@@ -52,7 +48,7 @@ class EditModeState(id: Int) : LauncherState(id, StatsLogManager.LAUNCHER_STATE_
     }
 
     override fun getWorkspaceBackgroundAlpha(launcher: Launcher): Float {
-        return 0.2f
+        return 0f
     }
 
     override fun onLeavingState(launcher: Launcher?, toState: LauncherState?) {

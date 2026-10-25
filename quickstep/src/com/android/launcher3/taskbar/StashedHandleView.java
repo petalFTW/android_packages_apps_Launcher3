@@ -23,20 +23,20 @@ import android.animation.ObjectAnimator;
 import android.animation.PropertyValuesHolder;
 import android.annotation.Nullable;
 import android.content.Context;
+import android.graphics.Canvas;
+import android.graphics.Outline;
 import android.graphics.Rect;
 import android.util.AttributeSet;
+import android.util.IntProperty;
 import android.view.View;
 
 import androidx.annotation.ColorInt;
 import androidx.core.content.ContextCompat;
 
-import com.android.launcher3.LauncherAnimUtils;
+import com.android.internal.graphics.drawable.PetalGlassDrawable;
 import com.android.launcher3.R;
 
-/**
- * View to render a handle that changes color based on the background to ensure contrast. Used for
- * the taskbar when stashed as well as the bubble bar when stashed.
- */
+// stashed bar still needs contrast over whatever app is underneath
 public class StashedHandleView extends View {
 
     private static final long COLOR_CHANGE_DURATION = 120;
@@ -48,6 +48,17 @@ public class StashedHandleView extends View {
 
     private @Nullable ObjectAnimator mColorChangeAnim;
     private Boolean mIsRegionDark;
+    private final PetalGlassDrawable mGlass;
+    private final Outline mGlassOutline = new Outline();
+    private final Rect mGlassBounds = new Rect();
+    private int mHandleColor;
+    private static final IntProperty<StashedHandleView> HANDLE_COLOR =
+            new IntProperty<>("handleColor") {
+                @Override public Integer get(StashedHandleView view) { return view.mHandleColor; }
+                @Override public void setValue(StashedHandleView view, int color) {
+                    view.setBackgroundColor(color);
+                }
+            };
 
     public StashedHandleView(Context context) {
         this(context, null);
@@ -69,16 +80,40 @@ public class StashedHandleView extends View {
                 R.color.taskbar_stashed_handle_light_color);
         mStashedHandleDarkColor = ContextCompat.getColor(context,
                 R.color.taskbar_stashed_handle_dark_color);
+        // tiny bar doesn't need to drag the whole app through a blur pass
+        mGlass = new PetalGlassDrawable(this, 100f, 0f, false);
+        setBackground(null);
+        setWillNotDraw(false);
+        setBackgroundColor(mStashedHandleLightColor);
     }
 
-    /**
-     * Updates mSampledRegion to be the location of the stashedHandleBounds relative to the screen.
-     * @see #getSampledRegion()
-     */
+    @Override public void setBackgroundColor(int color) {
+        if (mGlass == null) {
+            super.setBackgroundColor(color);
+            return;
+        }
+        if (mHandleColor == color) return;
+        mHandleColor = color;
+        mGlass.setColor(color & 0x00FFFFFF | 0x90000000);
+        invalidate();
+    }
+
+    @Override protected void onDraw(Canvas canvas) {
+        super.onDraw(canvas);
+        if (getOutlineProvider() == null) return;
+        mGlassOutline.setEmpty();
+        getOutlineProvider().getOutline(this, mGlassOutline);
+        if (!mGlassOutline.getRect(mGlassBounds)) return;
+        mGlass.setBounds(mGlassBounds);
+        float radius = Math.max(0f, mGlassOutline.getRadius());
+        mGlass.setGlassCorners(radius, radius);
+        mGlass.draw(canvas);
+    }
+
+    // sampling wants screen coordinates
     public void updateSampledRegion(Rect stashedHandleBounds) {
         getLocationOnScreen(mTmpArr);
-        // Translations are temporary due to animations, remove them for the purpose of determining
-        // the final region we want sampled.
+        // sample the resting spot, not the animated wobble
         mTmpArr[0] -= Math.round(getTranslationX());
         mTmpArr[1] -= Math.round(getTranslationY());
         mSampledRegion.set(stashedHandleBounds);
@@ -89,12 +124,7 @@ public class StashedHandleView extends View {
         return mSampledRegion;
     }
 
-    /**
-     * Updates the handle color.
-     * @param isRegionDark Whether the background behind the handle is dark, and thus the handle
-     *                     should be light (and vice versa).
-     * @param animate Whether to animate the change, or apply it immediately.
-     */
+    // dark app gets a light handle, obviously
     public void updateHandleColor(boolean isRegionDark, boolean animate) {
         if (mIsRegionDark != null && mIsRegionDark == isRegionDark) {
             return;
@@ -106,7 +136,7 @@ public class StashedHandleView extends View {
         }
         if (animate) {
             mColorChangeAnim = ObjectAnimator.ofArgb(this,
-                    LauncherAnimUtils.VIEW_BACKGROUND_COLOR, newColor);
+                    HANDLE_COLOR, newColor);
             mColorChangeAnim.addListener(new AnimatorListenerAdapter() {
                 @Override
                 public void onAnimationEnd(Animator animation) {
@@ -120,12 +150,7 @@ public class StashedHandleView extends View {
         }
     }
 
-    /**
-     * Updates the handle scale.
-     *
-     * @param scale target scale to animate towards (starting from current scale)
-     * @param durationMs milliseconds for the animation to take
-     */
+    // scale from wherever the last gesture left it
     public void animateScale(float scale, long durationMs) {
         ObjectAnimator scaleAnim = ObjectAnimator.ofPropertyValuesHolder(this,
                 PropertyValuesHolder.ofFloat(SCALE_PROPERTY, scale));

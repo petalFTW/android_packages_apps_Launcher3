@@ -277,6 +277,7 @@ public class ActivityAllAppsContainerView<T extends Context & ActivityContext>
         mSearchRecyclerView = findViewById(R.id.search_results_list_view);
         mFastScroller = findViewById(R.id.fast_scroller);
         mFastScroller.setPopupView(findViewById(R.id.fast_scroller_popup));
+        mFastScroller.setVisibility(GONE);
         mFastScrollLetterLayout = findViewById(R.id.scroll_letter_layout);
         setClipChildren(false);
 
@@ -404,7 +405,7 @@ public class ActivityAllAppsContainerView<T extends Context & ActivityContext>
         if (!mSearchTransitionController.isRunning() && goingToSearch == isSearching()) {
             return;
         }
-        mFastScroller.setVisibility(goingToSearch ? INVISIBLE : VISIBLE);
+        mFastScroller.setVisibility(GONE);
         if (goingToSearch) {
             // Fade out the button to pause work apps.
             mWorkManager.onActivePageChanged(SEARCH);
@@ -871,8 +872,8 @@ public class ActivityAllAppsContainerView<T extends Context & ActivityContext>
         boolean dark = (context.getResources().getConfiguration().uiMode
                 & android.content.res.Configuration.UI_MODE_NIGHT_MASK)
                 == android.content.res.Configuration.UI_MODE_NIGHT_YES;
-        int base = dark ? 0xFF181818 : 0xFFF5F5F5;
-        int panel = ColorUtils.setAlphaComponent(base, dark ? 0xA8 : 0xC4);
+        int base = Color.TRANSPARENT;
+        int panel = Color.TRANSPARENT;
         mScrimColor = panel;
         mHeaderProtectionColor = base;
         mBottomSheetBackgroundColorOverBlur = panel;
@@ -1286,7 +1287,7 @@ public class ActivityAllAppsContainerView<T extends Context & ActivityContext>
     protected void setScrollbarVisibility(boolean visible) {
         AllAppsRecyclerView rv = getActiveRecyclerView();
         if (rv != null && rv.getScrollbar() != null) {
-            rv.getScrollbar().setVisibility(visible ? VISIBLE : GONE);
+            rv.getScrollbar().setVisibility(GONE);
         }
     }
 

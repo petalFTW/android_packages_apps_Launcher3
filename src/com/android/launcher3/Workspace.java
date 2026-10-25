@@ -376,7 +376,11 @@ public class Workspace<T extends View & PageIndicator> extends PagedView<T>
 
         mWorkspaceFadeInAdjacentScreens = grid.shouldFadeAdjacentWorkspaceScreens();
 
-        Rect padding = grid.mWorkspaceProfile.getWorkspacePadding();
+        Rect padding = new Rect(grid.mWorkspaceProfile.getWorkspacePadding());
+        if (!PetalLauncherPrefs.enabled(getContext(), PetalLauncherPrefs.DOCK_ENABLED)) {
+            // dock is off, so don't reserve a strip of dead air down there
+            padding.bottom = Math.max(0, padding.bottom - grid.hotseatBarSizePx);
+        }
         setPadding(padding.left, padding.top, padding.right, padding.bottom);
         mInsets.set(insets);
 
@@ -406,6 +410,8 @@ public class Workspace<T extends View & PageIndicator> extends PagedView<T>
 
         // Set insets for page indicator
         Rect padding = grid.mWorkspaceProfile.getWorkspacePadding();
+        boolean dockHidden = !PetalLauncherPrefs.enabled(
+                getContext(), PetalLauncherPrefs.DOCK_ENABLED);
         if (grid.isVerticalBarLayout()) {
             lp.leftMargin = padding.left + grid.mWorkspaceProfile.getWorkspaceCellPaddingXPx();
             lp.rightMargin = padding.right + grid.mWorkspaceProfile.getWorkspaceCellPaddingXPx();
@@ -413,7 +419,7 @@ public class Workspace<T extends View & PageIndicator> extends PagedView<T>
         } else {
             lp.leftMargin = lp.rightMargin = 0;
             lp.gravity = Gravity.CENTER_HORIZONTAL | Gravity.BOTTOM;
-            lp.bottomMargin = grid.hotseatBarSizePx;
+            lp.bottomMargin = dockHidden ? 0 : grid.hotseatBarSizePx;
         }
         pageIndicatorContainer.setLayoutParams(lp);
     }
@@ -545,6 +551,9 @@ public class Workspace<T extends View & PageIndicator> extends PagedView<T>
         if (mAccessibilityDragListener != null) {
             mAccessibilityDragListener.onDragStart(dragObject, options);
         }
+        if (mLauncher.isInState(EDIT_MODE)) {
+            mLauncher.onPetalEditDrag(true);
+        }
         if (!mLauncher.isInState(EDIT_MODE)) {
             mLauncher.getStateManager().goToState(SPRING_LOADED);
         }
@@ -584,6 +593,7 @@ public class Workspace<T extends View & PageIndicator> extends PagedView<T>
         if (mAccessibilityDragListener != null) {
             mAccessibilityDragListener.onDragEnd();
         }
+        mLauncher.onPetalEditDrag(false);
         mDragInfo = null;
         mDragSourceInternal = null;
     }

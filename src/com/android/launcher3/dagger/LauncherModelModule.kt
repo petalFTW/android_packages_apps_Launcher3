@@ -21,6 +21,10 @@ import com.android.launcher3.LifecycleTracker
 import com.android.launcher3.graphics.ThemeManager.Companion.ICON_FACTORY_DAGGER_KEY
 import com.android.launcher3.graphics.theme.IconThemeFactory
 import com.android.launcher3.graphics.theme.MonoIconThemeFactory
+import android.content.Context
+import com.android.launcher3.dagger.ApplicationContext
+import com.android.launcher3.graphics.theme.SubjectIconThemeFactory
+import com.android.launcher3.petalos.SubjectIconStore
 import com.android.launcher3.graphics.theme.MonoIconThemeFactory.MONO_FACTORY_ID
 import com.android.launcher3.graphics.theme.ThemePreference.Companion.THEME_OVERRIDES_DAGGER_KEY
 import com.android.launcher3.model.data.ItemInfo
@@ -47,6 +51,14 @@ abstract class LauncherModelModule {
     abstract fun legacyThemeKeys(): Map<String, ConstantItem<String>>
 
     companion object {
+
+        @Provides
+        @IntoMap
+        @StringKey(SubjectIconStore.FACTORY)
+        @Named(ICON_FACTORY_DAGGER_KEY)
+        @JvmStatic
+        fun subjectIconFactory(@ApplicationContext context: Context): IconThemeFactory =
+            SubjectIconThemeFactory(context)
 
         @Provides
         @IntoMap

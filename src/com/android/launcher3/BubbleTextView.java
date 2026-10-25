@@ -50,6 +50,7 @@ import android.content.res.ColorStateList;
 import android.content.res.TypedArray;
 import android.graphics.Canvas;
 import android.graphics.Color;
+import android.graphics.Outline;
 import android.graphics.Paint;
 import android.graphics.Rect;
 import android.graphics.RectF;
@@ -71,6 +72,7 @@ import android.view.KeyEvent;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewDebug;
+import android.view.ViewOutlineProvider;
 import android.view.accessibility.AccessibilityNodeInfo;
 import android.widget.TextView;
 
@@ -137,6 +139,7 @@ public class BubbleTextView extends TextView implements ItemInfoUpdateReceiver,
     public static final int DISPLAY_SEARCH_RESULT_APP_ROW = 9;
 
     private static final float MIN_LETTER_SPACING = -0.05f;
+    private static final float WORKSPACE_ICON_SHADOW_ELEVATION_DP = 3f;
     private static final int MAX_SEARCH_LOOP_COUNT = 20;
     private static final Character NEW_LINE = '\n';
     private static final String EMPTY = "";
@@ -329,6 +332,25 @@ public class BubbleTextView extends TextView implements ItemInfoUpdateReceiver,
         mIconSize = a.getDimensionPixelSize(R.styleable.BubbleTextView_iconSizeOverride,
                 defaultIconSize);
         a.recycle();
+
+        if (mDisplay == DISPLAY_WORKSPACE) {
+            setOutlineProvider(new ViewOutlineProvider() {
+                private final Rect mBounds = new Rect();
+
+                @Override
+                public void getOutline(View view, Outline outline) {
+                    if (mIcon == null || !mIsIconVisible) {
+                        outline.setEmpty();
+                        return;
+                    }
+                    getIconBounds(mBounds);
+                    Utilities.scaleRectAboutCenter(mBounds, ICON_VISIBLE_AREA_FACTOR);
+                    outline.setPath(ThemeManager.INSTANCE.get(getContext())
+                            .getIconShape().getPath(mBounds));
+                }
+            });
+            setClipToOutline(false);
+        }
 
         mRunningAppIndicatorHeight =
                 getResources().getDimensionPixelSize(R.dimen.taskbar_running_app_indicator_height);
@@ -591,6 +613,7 @@ public class BubbleTextView extends TextView implements ItemInfoUpdateReceiver,
     }
 
     protected boolean shouldUseTheme() {
+        if (com.android.launcher3.petalos.SubjectIconStore.isEnabled(getContext())) return true;
         return mDisplay == DISPLAY_WORKSPACE || mDisplay == DISPLAY_FOLDER
                 || mDisplay == DISPLAY_TASKBAR
                 || (mThemeAllAppsIcons && mDisplay == DISPLAY_ALL_APPS);
@@ -1337,6 +1360,7 @@ public class BubbleTextView extends TextView implements ItemInfoUpdateReceiver,
             applyCompoundDrawables(icon);
         }
         mIcon = icon;
+        updateWorkspaceIconShadow();
         if (mIcon != null) {
             mIcon.setVisible(getWindowVisibility() == VISIBLE && isShown(), false);
             mIcon.setHoverScaleEnabledForDisplay(mDisplay != DISPLAY_TASKBAR);
@@ -1346,6 +1370,7 @@ public class BubbleTextView extends TextView implements ItemInfoUpdateReceiver,
     @Override
     public void setIconVisible(boolean visible) {
         mIsIconVisible = visible;
+        updateWorkspaceIconShadow();
         if (!mIsIconVisible) {
             resetIconScale();
         }
@@ -1355,6 +1380,15 @@ public class BubbleTextView extends TextView implements ItemInfoUpdateReceiver,
 
     private Drawable getIconOrTransparentColor() {
         return mIsIconVisible ? mIcon : new ColorDrawable(Color.TRANSPARENT);
+    }
+
+    private void updateWorkspaceIconShadow() {
+        if (mDisplay != DISPLAY_WORKSPACE) return;
+        setElevation(mIcon != null && mIsIconVisible
+                ? WORKSPACE_ICON_SHADOW_ELEVATION_DP
+                        * getResources().getDisplayMetrics().density
+                : 0f);
+        invalidateOutline();
     }
 
     /** Sets the icon visual state to disabled or not. */

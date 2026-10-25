@@ -36,6 +36,7 @@ import android.widget.TextView
 import androidx.core.content.res.ResourcesCompat
 import com.android.app.animation.Interpolators
 import com.android.app.animation.Interpolators.clampToProgress
+import com.android.internal.graphics.drawable.PetalGlassDrawable
 import com.android.launcher3.AbstractFloatingView
 import com.android.launcher3.Flags.enableRefactorTaskThumbnail
 import com.android.launcher3.R
@@ -62,6 +63,9 @@ constructor(context: Context?, attrs: AttributeSet?, defStyleAttr: Int = 0) :
     private val recentsViewContainer: RecentsViewContainer =
         RecentsViewContainer.containerFromContext(context)
     private val tempRect = Rect()
+    private val menuCornerRadius = resources.getDimension(R.dimen.task_menu_corner_radius)
+    private val menuGlass =
+        PetalGlassDrawable(this, menuCornerRadius / resources.displayMetrics.density, 0f, false)
     private val taskName: TextView by lazy { findViewById(R.id.task_name) }
     private val optionLayout: LinearLayout by lazy { findViewById(R.id.menu_option_layout) }
     private var openCloseAnimator: AnimatorSet? = null
@@ -108,7 +112,7 @@ constructor(context: Context?, attrs: AttributeSet?, defStyleAttr: Int = 0) :
     }
 
     override fun handleClose(animate: Boolean) {
-        animateOpenOrClosed(closing = true, animated = false)
+        animateOpenOrClosed(closing = true, animated = animate)
     }
 
     override fun isOfType(type: Int): Boolean = (type and TYPE_TASK_MENU) != 0
@@ -121,7 +125,8 @@ constructor(context: Context?, attrs: AttributeSet?, defStyleAttr: Int = 0) :
                     0,
                     view.width,
                     view.height,
-                    TaskCornerRadius.get(view.context),
+                    if (enableOverviewIconMenu()) menuCornerRadius
+                    else TaskCornerRadius.get(view.context),
                 )
             }
         }
@@ -220,7 +225,8 @@ constructor(context: Context?, attrs: AttributeSet?, defStyleAttr: Int = 0) :
             orientationHandler.getTaskMenuWidth(containerView, deviceProfile, stagePosition)
         // Gravity set to Left instead of Start as sTempRect.left measures Left distance not Start
         params.gravity =
-            if (enableOverviewIconMenu() && orientationHandler.isLayoutNaturalToLauncher)
+            if (enableOverviewIconMenu() && orientationHandler.isLayoutNaturalToLauncher &&
+                !isAppChipBelowTask)
                 Gravity.START
             else Gravity.LEFT
         layoutParams = params
@@ -234,15 +240,9 @@ constructor(context: Context?, attrs: AttributeSet?, defStyleAttr: Int = 0) :
         optionLayout.showDividers =
             if (enableOverviewIconMenu()) SHOW_DIVIDER_NONE else SHOW_DIVIDER_MIDDLE
 
-        optionLayout.background =
-            if (enableOverviewIconMenu()) {
-                ResourcesCompat.getDrawable(resources, R.drawable.app_chip_menu_bg, context.theme)
-            } else {
-                null
-            }
+        optionLayout.background = null
         if (enableOverviewIconMenu()) {
-            background =
-                ResourcesCompat.getDrawable(resources, R.drawable.app_chip_menu_bg, context.theme)
+            background = menuGlass
         }
 
         orientationHandler.setTaskOptionsMenuLayoutOrientation(
@@ -276,13 +276,17 @@ constructor(context: Context?, attrs: AttributeSet?, defStyleAttr: Int = 0) :
         }
 
         translationX =
-            orientationHandler.getTaskMenuX(
-                thumbnailAlignedX,
-                containerView,
-                deviceProfile,
-                taskInsetMargin,
-                iconView,
-            )
+            if (isAppChipBelowTask) {
+                (recentsViewContainer.dragLayer.width - params.width * scaleX) / 2f - insets.left
+            } else {
+                orientationHandler.getTaskMenuX(
+                    thumbnailAlignedX,
+                    containerView,
+                    deviceProfile,
+                    taskInsetMargin,
+                    iconView,
+                )
+            }
         translationY =
             orientationHandler.getTaskMenuY(
                 thumbnailAlignedY,
@@ -304,13 +308,13 @@ constructor(context: Context?, attrs: AttributeSet?, defStyleAttr: Int = 0) :
     private val iconView: View
         get() = taskContainer?.iconView?.asView() ?: taskView.getTaskIcons().first().first.asView()
 
+    private val isAppChipBelowTask: Boolean
+        get() = (iconView as? IconAppChipView)?.isBelowTask == true
+
     private fun animateOpenOrClosed(closing: Boolean, animated: Boolean = true) {
         if (!iconView.isAttachedToWindow) return
         openCloseAnimator?.let { if (it.isRunning) it.cancel() }
-        // If we're opening, we just start from the beginning as a new `TaskMenuView` is
-        // created
-        // each time we do the open animation so there will never be a partial value
-        // here.
+        // opening gets a fresh menu, no half-finished animation crap
         var revealAnimationStartProgress = 0f
         if (closing) revealAnimator?.let { revealAnimationStartProgress = 1f - it.animatedFraction }
         revealAnimator =
@@ -318,7 +322,8 @@ constructor(context: Context?, attrs: AttributeSet?, defStyleAttr: Int = 0) :
                 .createRevealAnimator(this, closing, revealAnimationStartProgress)
                 .apply {
                     interpolator =
-                        if (enableOverviewIconMenu()) Interpolators.EMPHASIZED
+                        if (closing && isAppChipBelowTask) Interpolators.EMPHASIZED_ACCELERATE
+                        else if (enableOverviewIconMenu()) Interpolators.EMPHASIZED
                         else Interpolators.DECELERATE
 
                     if (enableRefactorTaskThumbnail()) {
@@ -388,10 +393,15 @@ constructor(context: Context?, attrs: AttributeSet?, defStyleAttr: Int = 0) :
     }
 
     private fun createOpenCloseOutlineProvider(): RoundedRectRevealOutlineProvider {
-        val radius = TaskCornerRadius.get(mContext)
+        val radius =
+            if (enableOverviewIconMenu()) menuCornerRadius else TaskCornerRadius.get(mContext)
 
         val fromRect =
-            if (enableOverviewIconMenu()) {
+            if (isAppChipBelowTask) {
+                // actually fold into the pill, don't leave most of the panel hanging there
+                val left = (width - iconView.minimumWidth) / 2
+                Rect(left, 0, left + iconView.minimumWidth, 0)
+            } else if (enableOverviewIconMenu()) {
                 Rect(
                     /* left = */ if (isLayoutRtl) width - iconView.minimumWidth else 0,
                     /* top = */ 0,
@@ -406,21 +416,22 @@ constructor(context: Context?, attrs: AttributeSet?, defStyleAttr: Int = 0) :
         return RoundedRectRevealOutlineProvider(radius, radius, fromRect, toRect)
     }
 
-    /**
-     * Calculates max height based on how much space we have available. If not enough space then the
-     * view will scroll. The maximum menu size will sit inside the task with a margin on the top and
-     * bottom.
-     */
+    // scroll the options if this thing won't fit
     private fun calculateMaxHeight(): Int =
         taskView.pagedOrientationHandler.getTaskMenuHeight(
             taskInsetMargin = resources.getDimension(R.dimen.task_card_margin), // taskInsetMargin
             deviceProfile = recentsViewContainer.deviceProfile,
             taskMenuX = translationX,
             taskMenuY =
-                // Bottom menu can translate up to show more options. So we use the min
-                // translation allowed to calculate its max height.
-                if (enableOverviewIconMenu() && taskView.isOnGridBottomRow()) minMenuTop
-                else translationY,
+                // bottom pills need room to shove the menu upward
+                if (
+                    enableOverviewIconMenu() &&
+                        (taskView.isOnGridBottomRow() || isAppChipBelowTask)
+                ) {
+                    minMenuTop
+                } else {
+                    translationY
+                },
         )
 
     private fun setOnClosingStartCallback(onClosingStartCallback: Runnable?) {
@@ -428,6 +439,9 @@ constructor(context: Context?, attrs: AttributeSet?, defStyleAttr: Int = 0) :
     }
 
     private fun animateOpenOrCloseAppChip(closing: Boolean, animatorBuilder: AnimatorSet.Builder) {
+        val movementInterpolator =
+            if (closing && isAppChipBelowTask) Interpolators.EMPHASIZED_ACCELERATE
+            else Interpolators.EMPHASIZED
         if (!closing) {
             alpha = 0f
             optionLayout.apply {
@@ -441,16 +455,17 @@ constructor(context: Context?, attrs: AttributeSet?, defStyleAttr: Int = 0) :
 
         val iconAppChip = iconView as IconAppChipView
 
-        // Animate menu up for enough room to display full menu when task on bottom row.
+        // shove the pill up so the options can take its old spot
         var additionalTranslationY = 0f
         val translationYMargin = orientationHandler.getAppChipMenuMarginY(iconAppChip, isLayoutRtl)
-        if (taskView.isOnGridBottomRow()) {
+        if (taskView.isOnGridBottomRow() || isAppChipBelowTask) {
             val expandedMenuPosition = menuTranslationYBeforeOpen + translationYMargin
             val currentMenuBottom: Float = expandedMenuPosition + height
+            val menuBottom =
+                if (isAppChipBelowTask) menuTranslationYBeforeOpen else maxMenuBottom.toFloat()
             additionalTranslationY =
-                if (currentMenuBottom < maxMenuBottom) 0f
-                // Translate menu up for enough room to display full menu when task on bottom row.
-                else maxMenuBottom - currentMenuBottom
+                if (currentMenuBottom < menuBottom) 0f
+                else menuBottom - currentMenuBottom
 
             val currentMenuTop = expandedMenuPosition + additionalTranslationY
             // If it translate above the min accepted, it translates to the top of the screen
@@ -467,7 +482,7 @@ constructor(context: Context?, attrs: AttributeSet?, defStyleAttr: Int = 0) :
                 if (closing) menuTranslationYBeforeOpen
                 else menuTranslationYBeforeOpen + translationYMargin + additionalTranslationY,
             )
-        translationYAnim.interpolator = Interpolators.EMPHASIZED
+        translationYAnim.interpolator = movementInterpolator
         animatorBuilder.with(translationYAnim)
 
         val menuTranslationYAnim: ObjectAnimator =
@@ -476,11 +491,12 @@ constructor(context: Context?, attrs: AttributeSet?, defStyleAttr: Int = 0) :
                 MultiPropertyFactory.MULTI_PROPERTY_VALUE,
                 if (closing) 0f else additionalTranslationY,
             )
-        menuTranslationYAnim.interpolator = Interpolators.EMPHASIZED
+        menuTranslationYAnim.interpolator = movementInterpolator
         animatorBuilder.with(menuTranslationYAnim)
 
         var additionalTranslationX = 0f
         if (
+            !isAppChipBelowTask &&
             taskView.pagedOrientationHandler.isLayoutNaturalToLauncher &&
                 taskContainer?.stagePosition ==
                     SplitConfigurationOptions.STAGE_POSITION_BOTTOM_OR_RIGHT
@@ -505,9 +521,13 @@ constructor(context: Context?, attrs: AttributeSet?, defStyleAttr: Int = 0) :
                 this,
                 TRANSLATION_X,
                 if (closing) menuTranslationXBeforeOpen
+                else if (isAppChipBelowTask) {
+                    (recentsViewContainer.dragLayer.width - width * scaleX) / 2f -
+                        recentsViewContainer.dragLayer.insets.left
+                }
                 else menuTranslationXBeforeOpen - translationXMargin - additionalTranslationX,
             )
-        translationXAnim.interpolator = Interpolators.EMPHASIZED
+        translationXAnim.interpolator = movementInterpolator
         animatorBuilder.with(translationXAnim)
 
         val menuTranslationXAnim: ObjectAnimator =
@@ -516,34 +536,39 @@ constructor(context: Context?, attrs: AttributeSet?, defStyleAttr: Int = 0) :
                 MultiPropertyFactory.MULTI_PROPERTY_VALUE,
                 if (closing) 0f else -additionalTranslationX,
             )
-        menuTranslationXAnim.interpolator = Interpolators.EMPHASIZED
+        menuTranslationXAnim.interpolator = movementInterpolator
         animatorBuilder.with(menuTranslationXAnim)
 
         // Scaling the container inside the menu
         val toScaleX = if (closing) CONTAINER_SCALE_PERCENTAGE else 1f
         val animatorScaleX = ObjectAnimator.ofFloat(optionLayout, SCALE_X, toScaleX)
-        animatorScaleX.interpolator = Interpolators.EMPHASIZED
+        animatorScaleX.interpolator = movementInterpolator
         animatorBuilder.with(animatorScaleX)
 
         val toScaleY = if (closing) CONTAINER_SCALE_PERCENTAGE else 1f
         val animatorScaleY = ObjectAnimator.ofFloat(optionLayout, SCALE_Y, toScaleY)
-        animatorScaleY.interpolator = Interpolators.EMPHASIZED
+        animatorScaleY.interpolator = movementInterpolator
         animatorBuilder.with(animatorScaleY)
 
         val alphaValue = if (closing) 0f else 1f
         val optionLayoutAlphaAnimator =
             ObjectAnimator.ofFloat(optionLayout, ALPHA, alphaValue).apply {
-                interpolator = TimeInterpolator {
-                    clampToProgress(Interpolators.EMPHASIZED.getInterpolation(it), .75f, 1f)
-                }
+                interpolator =
+                    if (isAppChipBelowTask) Interpolators.LINEAR
+                    else TimeInterpolator {
+                        clampToProgress(Interpolators.EMPHASIZED.getInterpolation(it), .75f, 1f)
+                    }
             }
         animatorBuilder.with(optionLayoutAlphaAnimator)
 
         val menuAlphaAnimator =
-            ObjectAnimator.ofFloat(this, ALPHA, alphaValue).apply {
-                interpolator = TimeInterpolator {
-                    clampToProgress(Interpolators.EMPHASIZED.getInterpolation(it), .48f, .74f)
-                }
+            ObjectAnimator.ofFloat(this, ALPHA,
+                if (closing && !isAppChipBelowTask) 0f else 1f).apply {
+                interpolator =
+                    if (isAppChipBelowTask) Interpolators.LINEAR
+                    else TimeInterpolator {
+                        clampToProgress(Interpolators.EMPHASIZED.getInterpolation(it), .48f, .74f)
+                    }
             }
         animatorBuilder.with(menuAlphaAnimator)
 

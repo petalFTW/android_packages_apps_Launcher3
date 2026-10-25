@@ -53,10 +53,7 @@ import com.android.launcher3.graphics.ShapeDelegate;
 import com.android.launcher3.graphics.ThemeManager;
 import com.android.launcher3.views.ActivityContext;
 
-/**
- * This object represents a FolderIcon preview background. It stores drawing / measurement
- * information, handles drawing, and animation (accept state <--> rest state).
- */
+// preview plate, including the little drop-hover wobble
 public class PreviewBackground extends DelegatedCellDrawing {
 
     private static final boolean DRAW_SHADOW = false;
@@ -84,6 +81,13 @@ public class PreviewBackground extends DelegatedCellDrawing {
     private int mStrokeAlpha = MAX_BG_OPACITY;
     private int mShadowAlpha = 255;
     private View mInvalidateDelegate;
+    private PetalFolderGlass mGlass;
+    private float mOpacity = 1f;
+
+    void setOpacity(float opacity) {
+        mOpacity = Math.max(0f, Math.min(1f, opacity));
+        invalidate();
+    }
 
     int previewSize;
     int basePreviewOffsetX;
@@ -91,8 +95,7 @@ public class PreviewBackground extends DelegatedCellDrawing {
 
     private CellLayout mDrawingDelegate;
 
-    // When the PreviewBackground is drawn under an icon (for creating a folder) the border
-    // should not occlude the icon
+    // don't shove the border over the icon while making a folder
     public boolean isClipping = true;
 
     // Drawing / animation configurations
@@ -166,7 +169,7 @@ public class PreviewBackground extends DelegatedCellDrawing {
 
     public void setup(Context context, ActivityContext activity, View invalidateDelegate,
                       int availableSpaceX, int topPadding) {
-        mInvalidateDelegate = invalidateDelegate;
+        setInvalidateDelegate(invalidateDelegate);
 
         TypedArray ta = context.getTheme().obtainStyledAttributes(R.styleable.FolderIconPreview);
         mStrokeColor = ta.getColor(R.styleable.FolderIconPreview_folderIconBorderColor, 0);
@@ -219,10 +222,7 @@ public class PreviewBackground extends DelegatedCellDrawing {
         return basePreviewOffsetY - (getScaledRadius() - getRadius());
     }
 
-    /**
-     * Returns the progress of the scale animation to accept state, where 0 means the scale is at
-     * 1f and 1 means the scale is at ACCEPT_SCALE_FACTOR. Returns 0 when scaled due to hover.
-     */
+    // accept stretch only, hover doesn't count here
     float getAcceptScaleProgress() {
         return mIsHoveredOrAnimating ? 0 : (mScale - 1f) / (ACCEPT_SCALE_FACTOR - 1f);
     }
@@ -238,6 +238,10 @@ public class PreviewBackground extends DelegatedCellDrawing {
     }
 
     void setInvalidateDelegate(View invalidateDelegate) {
+        if (mGlass == null || mInvalidateDelegate != invalidateDelegate) {
+            if (mGlass != null) mGlass.dispose();
+            mGlass = invalidateDelegate == null ? null : new PetalFolderGlass(invalidateDelegate);
+        }
         mInvalidateDelegate = invalidateDelegate;
         invalidate();
     }
@@ -247,10 +251,14 @@ public class PreviewBackground extends DelegatedCellDrawing {
     }
 
     public void drawBackground(Canvas canvas) {
-        mPaint.setStyle(Paint.Style.FILL);
-        mPaint.setColor(getBgColor());
-
-        getShape().drawShape(canvas, getOffsetX(), getOffsetY(), getScaledRadius(), mPaint);
+        if (mGlass != null) {
+            int save = canvas.save();
+            canvas.clipPath(getClipPath());
+            float side = getScaledRadius() * 2f;
+            mGlass.draw(canvas, getOffsetX(), getOffsetY(), side, side, side * .22f,
+                    Math.round(255f * mOpacity));
+            canvas.restoreToCount(save);
+        }
         drawShadow(canvas);
     }
 
@@ -375,7 +383,10 @@ public class PreviewBackground extends DelegatedCellDrawing {
         float radiusDifference = radius - getRadius();
         float offsetX = basePreviewOffsetX - radiusDifference;
         float offsetY = basePreviewOffsetY - radiusDifference;
-        getShape().addToPath(mPath, offsetX, offsetY, radius);
+        // nine slots need a square plate, whatever shape the app icons happen to use
+        float side = radius * 2f;
+        mPath.addRoundRect(offsetX, offsetY, offsetX + side, offsetY + side,
+                side * .22f, side * .22f, Path.Direction.CW);
         return mPath;
     }
 

@@ -110,6 +110,7 @@ import android.animation.Animator;
 import android.animation.AnimatorSet;
 import android.animation.ValueAnimator;
 import android.annotation.TargetApi;
+import android.app.AlertDialog;
 import android.appwidget.AppWidgetHostView;
 import android.appwidget.AppWidgetManager;
 import android.content.ActivityNotFoundException;
@@ -124,6 +125,7 @@ import android.graphics.Bitmap;
 import android.graphics.Color;
 import android.graphics.Rect;
 import android.graphics.RectF;
+import android.graphics.drawable.GradientDrawable;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Parcelable;
@@ -137,6 +139,7 @@ import android.util.Log;
 import android.util.Pair;
 import android.util.SparseArray;
 import android.view.KeyEvent;
+import android.view.Gravity;
 import android.view.KeyboardShortcutGroup;
 import android.view.Menu;
 import android.view.MotionEvent;
@@ -150,6 +153,9 @@ import android.view.WindowManager.LayoutParams;
 import android.view.accessibility.AccessibilityEvent;
 import android.view.animation.OvershootInterpolator;
 import android.widget.Toast;
+import android.widget.FrameLayout;
+import android.widget.LinearLayout;
+import android.widget.TextView;
 import android.window.BackEvent;
 import android.window.OnBackAnimationCallback;
 
@@ -1216,8 +1222,25 @@ public class Launcher extends StatefulActivity<LauncherState>
             mOverlayManager.onActivityResumed();
         }
 
+        applyPetalDock();
         DragView.removeAllViews(this);
         TraceHelper.INSTANCE.endSection();
+    }
+
+    // petalOS: the dock toggle lives in the Home settings, so just re-read it every time we come back
+    private void applyPetalDock() {
+        if (mHotseat == null) return;
+        boolean show = PetalLauncherPrefs.enabled(this, PetalLauncherPrefs.DOCK_ENABLED);
+        mHotseat.setVisibility(show ? View.VISIBLE : View.GONE);
+        mHotseat.setPetalDockVisible(show);
+        if (mWorkspace == null) return;
+        DeviceProfile dp = getDeviceProfile();
+        Rect padding = new Rect(dp.mWorkspaceProfile.getWorkspacePadding());
+        if (!show) {
+            // no dock means no dead strip where it used to be
+            padding.bottom = Math.max(0, padding.bottom - dp.hotseatBarSizePx);
+        }
+        mWorkspace.setPadding(padding.left, padding.top, padding.right, padding.bottom);
     }
 
     @Override
@@ -1335,7 +1358,89 @@ public class Launcher extends StatefulActivity<LauncherState>
 
         mItemInflater = new ItemInflater<>(this, mAppWidgetHolder, getItemOnClickListener(),
                 mFocusHandler, new CellLayout(mWorkspace.getContext(), mWorkspace));
+        setupPetalEditBar();
     }
+
+    private int petalDp(float value) {
+        return Math.round(value * getResources().getDisplayMetrics().density);
+    }
+
+    private TextView petalEditAction(int label, Runnable action) {
+        TextView button = new TextView(this);
+        button.setText(label);
+        button.setTextColor(getColor(R.color.petal_edit_text));
+        button.setTextSize(14);
+        button.setGravity(Gravity.CENTER);
+        button.setMinHeight(petalDp(52));
+        button.setOnClickListener(v -> action.run());
+        return button;
+    }
+
+    private void setupPetalEditBar() {
+        LinearLayout bar = new LinearLayout(this);
+        bar.setOrientation(LinearLayout.VERTICAL);
+        bar.setPadding(petalDp(8), petalDp(4), petalDp(8), petalDp(4));
+        GradientDrawable background = new GradientDrawable();
+        background.setColor(getColor(R.color.petal_edit_surface));
+        background.setCornerRadius(petalDp(28));
+        bar.setBackground(background);
+        bar.setElevation(petalDp(8));
+        LinearLayout topRow = new LinearLayout(this);
+        topRow.setOrientation(LinearLayout.HORIZONTAL);
+        LinearLayout bottomRow = new LinearLayout(this);
+        bottomRow.setOrientation(LinearLayout.HORIZONTAL);
+        TextView apps = petalEditAction(R.string.petal_edit_add_apps, () -> {
+            mStateManager.goToState(ALL_APPS);
+        });
+        TextView widgets = petalEditAction(R.string.petal_edit_widgets, this::openWidgetPicker);
+        TextView wallpaper = petalEditAction(R.string.petal_edit_wallpaper,
+                () -> OptionsPopupView.startWallpaperPicker(bar));
+        TextView settings = petalEditAction(R.string.petal_edit_settings,
+                () -> OptionsPopupView.startSettings(bar));
+        TextView done = petalEditAction(R.string.petal_edit_done,
+                () -> mStateManager.goToState(NORMAL));
+        topRow.addView(apps, new LinearLayout.LayoutParams(0, petalDp(52), 1));
+        topRow.addView(widgets, new LinearLayout.LayoutParams(0, petalDp(52), 1));
+        topRow.addView(wallpaper, new LinearLayout.LayoutParams(0, petalDp(52), 1));
+        bottomRow.addView(settings, new LinearLayout.LayoutParams(0, petalDp(52), 1));
+        bottomRow.addView(done, new LinearLayout.LayoutParams(0, petalDp(52), 1));
+        bar.addView(topRow, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, petalDp(52)));
+        bar.addView(bottomRow, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, petalDp(52)));
+        FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT,
+                Gravity.BOTTOM);
+        params.setMargins(petalDp(18), 0, petalDp(18), petalDp(28));
+        mDragLayer.addView(bar, params);
+        bar.setVisibility(View.GONE);
+        mStateManager.addStateListener(new StateManager.StateListener<LauncherState>() {
+            @Override
+            public void onStateTransitionStart(LauncherState toState) {
+                if (toState != EDIT_MODE) {
+                    bar.setVisibility(View.GONE);
+                    onPetalEditDrag(false);
+                }
+            }
+
+            @Override
+            public void onStateTransitionComplete(LauncherState finalState) {
+                bar.setVisibility(finalState == EDIT_MODE ? View.VISIBLE : View.GONE);
+            }
+        });
+    }
+
+    /** Opens the workspace editing surface after a long press on empty space. */
+    public void enterPetalEditMode() {
+        if (Utilities.isWorkspaceEditAllowed(this)) {
+            mStateManager.goToState(EDIT_MODE);
+        }
+    }
+
+    /** Quickstep supplies the wallpaper blur used during edit-mode drags. */
+    public void onPetalEditDrag(boolean dragging) { }
+
+    public void onPetalPopupDepth(View popup, View selected, boolean showing) { }
 
     /**
      * Add a shortcut to the workspace or to a Folder.
@@ -3063,7 +3168,20 @@ public class Launcher extends StatefulActivity<LauncherState>
 
     @Override
     public OnClickListener getItemOnClickListener() {
-        return ItemClickHandler.INSTANCE;
+        return v -> {
+            Object tag = v.getTag();
+            if (isInState(EDIT_MODE) && tag instanceof WorkspaceItemInfo item
+                    && (item.container == CONTAINER_DESKTOP || item.container == CONTAINER_HOTSEAT)) {
+                new AlertDialog.Builder(this)
+                        .setMessage(getString(R.string.petal_edit_remove_app, item.title))
+                        .setNegativeButton(android.R.string.cancel, null)
+                        .setPositiveButton(R.string.petal_edit_remove,
+                                (dialog, which) -> removeItem(v, item, true))
+                        .show();
+                return;
+            }
+            ItemClickHandler.INSTANCE.onClick(v);
+        };
     }
 
     /**

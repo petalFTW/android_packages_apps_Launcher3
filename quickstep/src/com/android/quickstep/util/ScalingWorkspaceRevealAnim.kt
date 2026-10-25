@@ -187,7 +187,7 @@ class ScalingWorkspaceRevealAnim(
             // Add a blur animation to the scrim layer.
             var maxBlurRadius =
                 launcher.resources.getDimensionPixelSize(
-                    if (Flags.allAppsBlur() || Flags.enableOverviewBackgroundWallpaperBlur()) {
+                    if (Flags.allAppsBlur() || OverviewBlurConfig.isOverviewWallpaperBlurEnabled()) {
                         R.dimen.max_depth_blur_radius_enhanced
                     } else {
                         R.integer.max_depth_blur_radius

@@ -42,8 +42,8 @@ public class FolderGridOrganizer {
     private int mCountX;
     private int mCountY;
     private boolean mDisplayingUpperLeftQuadrant = false;
-    private static final int PREVIEW_MAX_ROWS = 2;
-    private static final int PREVIEW_MAX_COLUMNS = 2;
+    private static final int PREVIEW_MAX_ROWS = 3;
+    private static final int PREVIEW_MAX_COLUMNS = 3;
 
     /**
      * Note: must call {@link #setFolderInfo(FolderInfo)} manually for verifier to work.
@@ -52,6 +52,8 @@ public class FolderGridOrganizer {
         mMaxCountX = maxCountX;
         mMaxCountY = maxCountY;
         mMaxItemsPerPage = mMaxCountX * mMaxCountY;
+        mCountX = mMaxCountX;
+        mCountY = mMaxCountY;
     }
 
     /**
@@ -96,56 +98,20 @@ public class FolderGridOrganizer {
         return mMaxItemsPerPage;
     }
 
-    /**
-     * Calculates the grid size such that {@param count} items can fit in the grid.
-     * The grid size is calculated such that countY <= countX and countX = ceil(sqrt(count)) while
-     * maintaining the restrictions of {@link #mMaxCountX} &amp; {@link #mMaxCountY}.
-     */
+    // fixed pages, stop resizing this thing for two apps
     private void calculateGridSize(int count) {
-        boolean done;
-        int gridCountX = mCountX;
-        int gridCountY = mCountY;
-
-        if (count >= mMaxItemsPerPage) {
-            gridCountX = mMaxCountX;
-            gridCountY = mMaxCountY;
-            done = true;
-        } else {
-            done = false;
-        }
-
-        while (!done) {
-            int oldCountX = gridCountX;
-            int oldCountY = gridCountY;
-            if (gridCountX * gridCountY < count) {
-                // Current grid is too small, expand it
-                if ((gridCountX <= gridCountY || gridCountY == mMaxCountY)
-                        && gridCountX < mMaxCountX) {
-                    gridCountX++;
-                } else if (gridCountY < mMaxCountY) {
-                    gridCountY++;
-                }
-                if (gridCountY == 0) gridCountY++;
-            } else if ((gridCountY - 1) * gridCountX >= count && gridCountY >= gridCountX) {
-                gridCountY = Math.max(0, gridCountY - 1);
-            } else if ((gridCountX - 1) * gridCountY >= count) {
-                gridCountX = Math.max(0, gridCountX - 1);
-            }
-            done = gridCountX == oldCountX && gridCountY == oldCountY;
-        }
-
-        mCountX = gridCountX;
-        mCountY = gridCountY;
+        // empty slots stay put, the folder doesn't dance around anymore
+        mCountX = mMaxCountX;
+        mCountY = mMaxCountY;
     }
 
-    /**
-     * Updates the item's cellX, cellY and rank corresponding to the provided rank.
-     *
-     * @return true if there was any change
-     */
+    // true means the saved position needs a kick
     public boolean updateRankAndPos(ItemInfo item, int rank) {
-        if (rank != item.rank) {
+        Point pos = getPosForRank(rank);
+        if (rank != item.rank || item.cellX != pos.x || item.cellY != pos.y) {
             item.rank = rank;
+            item.cellX = pos.x;
+            item.cellY = pos.y;
             return true;
         }
         return false;
@@ -202,20 +168,15 @@ public class FolderGridOrganizer {
         return isItemInPreview(0, rank);
     }
 
-    /**
-     * @param page The page the item is on.
-     * @param rank The rank of the item.
-     * @return True iff the icon is in the 2x2 upper left quadrant of the Folder.
-     */
+    // the first nine slots are the preview now
     public boolean isItemInPreview(int page, int rank) {
-        // First page items are laid out such that the first 4 items are always in the upper
-        // left quadrant. For all other pages, we need to check the row and col.
+        // page-local rows and columns, not the old four-icon corner
         if (page > 0 || mDisplayingUpperLeftQuadrant) {
             int col = rank % mCountX;
             int row = rank / mCountX;
             return col < PREVIEW_MAX_COLUMNS && row < PREVIEW_MAX_ROWS;
         }
-        // If we have less than 4 items do this
+        // small folders still use the same nine slots
         return rank < MAX_NUM_ITEMS_IN_PREVIEW;
     }
 }

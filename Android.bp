@@ -492,7 +492,11 @@ android_app {
 
     static_libs: [
         "Launcher3ResLib",
+        "petal-depth-onnxruntime",
     ],
+    asset_dirs: ["assets"],
+    use_embedded_native_libs: true,
+    compile_multilib: "64",
     srcs: [
         ":launcher-src",
         ":launcher-src_no_quickstep",
@@ -591,6 +595,7 @@ android_library {
     static_libs: [
         "QuickstepResLib",
         "androidx.room_room-runtime",
+        "petal-depth-onnxruntime",
     ],
     plugins: [
         "androidx.room_room-compiler-plugin",
@@ -634,6 +639,7 @@ android_library {
         "SystemUI-statsd",
         "QuickstepResLib",
         "petalos-config",
+        "petal-depth-onnxruntime",
     ],
     manifest: "quickstep/AndroidManifest.xml",
     platform_apis: true,
@@ -649,7 +655,10 @@ android_library {
 // Build rule for Quickstep app.
 android_app {
     name: "Launcher3QuickStep",
-    static_libs: ["Launcher3QuickStepLib"],
+    static_libs: ["Launcher3QuickStepLib", "petal-depth-onnxruntime"],
+    asset_dirs: ["assets"],
+    use_embedded_native_libs: true,
+    compile_multilib: "64",
     optimize: {
         proguard_flags_files: [":launcher-proguard-rules"],
         enabled: true,
@@ -693,7 +702,10 @@ android_app {
 // eventually be merged into a single target
 android_app {
     name: "Launcher3Go",
-    static_libs: ["Launcher3GoLib"],
+    static_libs: ["Launcher3GoLib", "petal-depth-onnxruntime"],
+    asset_dirs: ["assets"],
+    use_embedded_native_libs: true,
+    compile_multilib: "64",
     resource_dirs: [],
 
     platform_apis: true,
@@ -734,7 +746,10 @@ android_app {
 
 android_app {
     name: "Launcher3QuickStepGo",
-    static_libs: ["Launcher3GoLib"],
+    static_libs: ["Launcher3GoLib", "petal-depth-onnxruntime"],
+    asset_dirs: ["assets"],
+    use_embedded_native_libs: true,
+    compile_multilib: "64",
     resource_dirs: [],
 
     platform_apis: true,

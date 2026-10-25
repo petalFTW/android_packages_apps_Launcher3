@@ -25,7 +25,11 @@ import android.animation.AnimatorSet;
 import android.animation.ObjectAnimator;
 import android.animation.ValueAnimator;
 import android.content.Context;
+import android.content.res.Configuration;
+import android.graphics.Canvas;
 import android.graphics.Rect;
+import android.graphics.drawable.GradientDrawable;
+import com.android.internal.graphics.drawable.BackgroundBlurDrawable;
 import android.util.AttributeSet;
 import android.view.Gravity;
 import android.view.LayoutInflater;
@@ -95,6 +99,13 @@ public class Hotseat extends CellLayout implements Insettable {
 
     private final View mQsb;
 
+    // Soft glass follows the actual hotseat grid, including empty slots.
+    private final GradientDrawable mPetalDock = new GradientDrawable();
+    private final Rect mPetalDockRect = new Rect();
+    private final Rect mPetalDockIconRect = new Rect();
+    private BackgroundBlurDrawable mPetalDockBlur;
+    private boolean mPetalDockEnabled = true;
+
     public Hotseat(Context context) {
         this(context, null);
     }
@@ -125,6 +136,116 @@ public class Hotseat extends CellLayout implements Insettable {
                 VIEW_TRANSLATE_X, ICONS_TRANSLATION_X_CHANNELS_COUNT, Float::sum);
         mQsbAlphaChannels = new MultiValueAlpha(mQsb, ALPHA_CHANNEL_CHANNELS_COUNT);
         mQsbAlphaChannels.setUpdateVisibility(true);
+
+        mPetalDock.setShape(GradientDrawable.RECTANGLE);
+        mPetalDock.setCornerRadius(getResources().getDimension(R.dimen.petal_dock_radius));
+        mPetalDock.setColor(getPetalDockTint());
+        mPetalDock.setStroke(
+                getResources().getDimensionPixelSize(R.dimen.petal_dock_stroke),
+                getContext().getColor(R.color.petal_dock_rim));
+        mPetalDockEnabled = PetalLauncherPrefs.enabled(context, PetalLauncherPrefs.DOCK_ENABLED);
+    }
+
+    @Override
+    protected void onAttachedToWindow() {
+        super.onAttachedToWindow();
+        if (getViewRootImpl() != null) {
+            mPetalDockBlur = getViewRootImpl().createBackgroundBlurDrawable();
+            mPetalDockBlur.setBlurRadius(getResources().getDimensionPixelSize(
+                    R.dimen.petal_dock_blur_radius));
+            mPetalDockBlur.setCornerRadius(getResources().getDimension(R.dimen.petal_dock_radius));
+            mPetalDockBlur.setColor(getPetalDockTint());
+            mPetalDockBlur.setVisible(mPetalDockEnabled, false);
+        }
+    }
+
+    private int getPetalDockTint() {
+        int accent = getContext().getColor(android.R.color.system_accent1_500);
+        return (accent & 0x00FFFFFF) | 0x24000000;
+    }
+
+    @Override
+    protected void onConfigurationChanged(Configuration configuration) {
+        super.onConfigurationChanged(configuration);
+        int tint = getPetalDockTint();
+        mPetalDock.setColor(tint);
+        mPetalDock.setStroke(getResources().getDimensionPixelSize(R.dimen.petal_dock_stroke),
+                getContext().getColor(R.color.petal_dock_rim));
+        if (mPetalDockBlur != null) mPetalDockBlur.setColor(tint);
+        invalidate();
+    }
+
+    @Override
+    protected void onDetachedFromWindow() {
+        if (mPetalDockBlur != null) mPetalDockBlur.setVisible(false, false);
+        mPetalDockBlur = null;
+        super.onDetachedFromWindow();
+    }
+
+    /** petalOS: the Home setting just flips this, we draw the plate in dispatchDraw. */
+    public void setPetalDockVisible(boolean enabled) {
+        if (mPetalDockEnabled != enabled) {
+            mPetalDockEnabled = enabled;
+            if (mPetalDockBlur != null) mPetalDockBlur.setVisible(enabled, false);
+            invalidate();
+        }
+    }
+
+    @Override
+    protected void dispatchDraw(Canvas canvas) {
+        // draw the plate first so it ends up under the icons
+        drawPetalDock(canvas);
+        super.dispatchDraw(canvas);
+    }
+
+    private void drawPetalDock(Canvas canvas) {
+        if (!mPetalDockEnabled) return;
+        if (mHasVerticalHotseat || getCountX() == 0) return;
+        cellToRect(0, 0, getCountX(), 1, mPetalDockRect);
+        // drawable bounds matter here, the label's spare space doesn't
+        int padH = getResources().getDimensionPixelSize(R.dimen.petal_dock_pad_h);
+        int padV = getResources().getDimensionPixelSize(R.dimen.petal_dock_pad_v);
+        mPetalDockRect.inset(-padH, -padV);
+        ShortcutAndWidgetContainer icons = getShortcutsAndWidgets();
+        if (icons.getChildCount() > 0) {
+            float centerY = 0;
+            int iconHeight = 0;
+            int visibleCount = 0;
+            for (int i = 0; i < icons.getChildCount(); i++) {
+                View icon = icons.getChildAt(i);
+                if (icon.getVisibility() != View.VISIBLE) continue;
+                if (icon instanceof BubbleTextView bubble) {
+                    bubble.getIconBounds(mPetalDockIconRect);
+                } else if (icon instanceof com.android.launcher3.folder.FolderIcon folder) {
+                    folder.getPreviewBounds(mPetalDockIconRect);
+                } else {
+                    mPetalDockIconRect.set(0, 0, icon.getWidth(), icon.getHeight());
+                }
+                centerY += icons.getY() + icon.getY() + mPetalDockIconRect.exactCenterY();
+                iconHeight = Math.max(iconHeight, mPetalDockIconRect.height());
+                visibleCount++;
+            }
+            if (visibleCount > 0) {
+                centerY /= visibleCount;
+                // shrink symmetrically if space is tight; clamping the bottom used to shift it up
+                float halfHeight = Math.min(iconHeight / 2f + padV,
+                        Math.min(centerY, getHeight() - centerY));
+                if (halfHeight <= 0f) return;
+                mPetalDockRect.top = Math.round(centerY - halfHeight);
+                mPetalDockRect.bottom = Math.round(centerY + halfHeight);
+            }
+        }
+        if (mPetalDockRect.top < 0) mPetalDockRect.offset(0, -mPetalDockRect.top);
+        if (mPetalDockRect.bottom > getHeight()) {
+            mPetalDockRect.offset(0, getHeight() - mPetalDockRect.bottom);
+        }
+        mPetalDockRect.intersect(0, 0, getWidth(), getHeight());
+        if (mPetalDockBlur != null) {
+            mPetalDockBlur.setBounds(mPetalDockRect);
+            mPetalDockBlur.draw(canvas);
+        }
+        mPetalDock.setBounds(mPetalDockRect);
+        mPetalDock.draw(canvas);
     }
 
     /** Provides translation X for hotseat icons for the channel. */

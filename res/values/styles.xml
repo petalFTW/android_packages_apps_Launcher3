@@ -20,6 +20,7 @@
 <resources xmlns:android="http://schemas.android.com/apk/res/android">
     <!-- Launcher theme -->
     <style name="BaseLauncherTheme" parent="@android:style/Theme.DeviceDefault.Light">
+        <item name="android:fontFamily">@font/petal_rubik</item>
         <item name="disabledIconAlpha">.54</item>
         <item name="android:colorBackgroundCacheHint">@null</item>
         <item name="android:colorEdgeEffect">#FF757575</item>

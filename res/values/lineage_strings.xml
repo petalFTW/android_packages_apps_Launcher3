@@ -24,7 +24,15 @@
     <string name="petal_recents_layout_stock">Default</string>
     <string name="petal_recents_layout_grid">Grid</string>
     <string name="petal_recents_layout_list">List</string>
-    <string name="petal_recents_layout_roudabout">Roudabout</string>
+    <string name="petal_recents_layout_roudabout">Roundabout</string>
+    <string name="petal_recents_layout_stack">Stack</string>
+    <string name="petal_edit_add_apps">Browse apps</string>
+    <string name="petal_edit_widgets">Widgets</string>
+    <string name="petal_edit_wallpaper">Wallpaper</string>
+    <string name="petal_edit_settings">Home settings</string>
+    <string name="petal_edit_done">Done</string>
+    <string name="petal_edit_remove_app">Remove %1$s from Home?</string>
+    <string name="petal_edit_remove">Remove</string>
 
     <!-- Edit workspace -->
     <string name="settings_lock_layout_title">Lock layout</string>

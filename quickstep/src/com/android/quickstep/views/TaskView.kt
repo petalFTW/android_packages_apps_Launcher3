@@ -393,6 +393,27 @@ constructor(
             applyScale()
         }
 
+    private var petalStackScale = 1f
+    private var petalStackTranslationX = 0f
+    private var petalStackTranslationY = 0f
+
+    // carousel depth gets its own multiplier, leave Quickstep's stuff alone
+    @JvmOverloads
+    fun setPetalStackTransform(scale: Float, translationX: Float, translationY: Float = 0f) {
+        if (petalStackScale != scale) {
+            petalStackScale = scale
+            applyScale()
+        }
+        if (petalStackTranslationX != translationX) {
+            petalStackTranslationX = translationX
+            applyTranslationX()
+        }
+        if (petalStackTranslationY != translationY) {
+            petalStackTranslationY = translationY
+            applyTranslationY()
+        }
+    }
+
     var modalScale = 1f
         set(value) {
             field = value
@@ -403,12 +424,14 @@ constructor(
         set(value) {
             field = value
             applyTranslationX()
+            recentsView?.updateTaskDepth()
         }
 
     private var dismissTranslationY = 0f
         set(value) {
             field = value
             applyTranslationY()
+            recentsView?.updateTaskDepth()
         }
 
     private var taskOffsetTranslationX = 0f
@@ -727,7 +750,17 @@ constructor(
 
     override fun onLayout(changed: Boolean, left: Int, top: Int, right: Int, bottom: Int) {
         super.onLayout(changed, left, top, right, bottom)
+        getTaskIcons().forEach { (icon, _) ->
+            if (icon is IconAppChipView && icon.isBelowTask) {
+                icon.layoutBelowTask(
+                    width,
+                    height,
+                    container.deviceProfile.overviewProfile.actionsTopMarginPx,
+                )
+            }
+        }
         updatePivots()
+        updateDismissChipAlpha()
         systemGestureExclusionRectList[0].apply {
             this.right = width
             this.bottom = height
@@ -1236,6 +1269,7 @@ constructor(
                 icon.setIconOrientation(orientationState, isGridTask)
             }
             setThumbnailOrientation(orientationState)
+            updateDismissChipAlpha()
         }
 
     protected open fun setThumbnailOrientation(orientationState: RecentsOrientedState) {
@@ -1257,8 +1291,7 @@ constructor(
         val boxTranslationY: Float
         val expectedWidth: Int
         val expectedHeight: Int
-        // petalOS: the iPadOS grid on phones sizes grid tasks from lastComputedGridTaskSize
-        // (previously tablet-only — on phones every card kept the stock carousel size).
+        // phones need the grid size too, stock cards are huge
         val useGridSizing = container.deviceProfile.getDeviceProperties().isTablet
                 || com.android.launcher3.petalos.PetalRecentsPrefs.isGrid()
         if (useGridSizing) {
@@ -1431,13 +1464,12 @@ constructor(
             if (icon != null) {
                 setDrawable(icon)
                 asView().setOnClickListener {
-                    if (!confirmSecondSplitSelectApp()) {
-                        showTaskMenu(this)
-                    }
+                    confirmSecondSplitSelectApp()
                 }
                 asView().setOnLongClickListener {
                     requestDisallowInterceptTouchEvent(true)
                     showTaskMenu(this)
+                    true
                 }
             } else {
                 setDrawable(null)
@@ -1754,11 +1786,7 @@ constructor(
         )
     }
 
-    /**
-     * Returns the task index of the last selected child task (0 or 1). If we contain multiple tasks
-     * and this TaskView is used as part of split selection, the selected child task index will be
-     * that of the remaining task.
-     */
+    // split selection wants the child that's still left
     protected open fun getLastSelectedChildTaskIndex() = 0
 
     private fun showTaskMenu(iconView: TaskViewIcon): Boolean {
@@ -1822,12 +1850,10 @@ constructor(
                         container.deviceProfile.deviceProperties.isLandscape
                 ) {
                     if (enableGridOnlyOverview()) {
-                        // With no focused task, there is less available space below the tasks, so
-                        // align the arrow to the third option in the menu.
+                        // no focused task means less room, aim at option three
                         2
                     } else {
-                        // Bottom row of landscape grid aligns arrow to second option to avoid
-                        // clipping
+                        // option two keeps landscape from clipping the damn menu
                         1
                     }
                 } else {
@@ -2022,7 +2048,8 @@ constructor(
     fun getSizeAdjustment(fullscreenEnabled: Boolean) = if (fullscreenEnabled) nonGridScale else 1f
 
     private fun applyScale() {
-        val scale = persistentScale * dismissScale * Utilities.mapRange(modalness, 1f, modalScale)
+        val scale = persistentScale * dismissScale * petalStackScale *
+            Utilities.mapRange(modalness, 1f, modalScale)
         scaleX = scale
         scaleY = scale
         updateFullscreenParams()
@@ -2035,6 +2062,7 @@ constructor(
                 taskResistanceTranslationX +
                 splitSelectTranslationX +
                 gridEndTranslationX +
+                petalStackTranslationX +
                 persistentTranslationX
     }
 
@@ -2044,8 +2072,32 @@ constructor(
                 taskOffsetTranslationY +
                 taskResistanceTranslationY +
                 splitSelectTranslationY +
+                petalStackTranslationY +
                 persistentTranslationY
+        updateDismissChipAlpha()
     }
+
+    private fun updateDismissChipAlpha() {
+        // fade the damn pill before it reaches the top
+        val alpha = (1f + dismissTranslationY / (height * 0.75f).coerceAtLeast(1f))
+            .coerceIn(0f, 1f)
+        getTaskIcons().forEach { (icon, _) ->
+            if (icon is IconAppChipView) {
+                icon.setDismissAlpha(if (icon.isBelowTask) alpha else 1f)
+            }
+        }
+    }
+
+    fun getDepthDismissTranslation(): Float =
+        if (::orientedState.isInitialized)
+            pagedOrientationHandler.getPrimaryValue(dismissTranslationX, dismissTranslationY)
+        else 0f
+
+    fun getTranslationWithoutDepth(): Float =
+        pagedOrientationHandler.getPrimaryValue(
+            translationX - petalStackTranslationX,
+            translationY - petalStackTranslationY,
+        )
 
     private fun onGridProgressChanged() {
         applyTranslationX()
@@ -2105,6 +2157,7 @@ constructor(
     }
 
     fun resetPersistentViewTransforms() {
+        setPetalStackTransform(1f, 0f)
         nonGridTranslationX = 0f
         gridTranslationX = 0f
         gridTranslationY = 0f

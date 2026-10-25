@@ -579,4 +579,14 @@
     <string name="seven_sided_cookie_shape_title">7-sided cookie</string>
     <!-- label for arch shape option in customization picker -->
     <string name="arch_shape_title">Arch</string>
+    <string name="petal_os_hub_title">petalOS Hub</string>
+    <string name="petal_os_hub_summary">Launcher motion and effects</string>
+    <string name="petal_unlock_animation_title">Unlock entrance</string>
+    <string name="petal_unlock_animation_summary">Bring Home content in as the lock screen opens</string>
+    <string name="petal_home_animation_title">Return to Home</string>
+    <string name="petal_home_animation_summary">Animate Home content when leaving apps or recents</string>
+    <string name="petal_drawer_animation_title">App drawer entrance</string>
+    <string name="petal_drawer_animation_summary">Ease drawer icons in with the panel</string>
+    <string name="petal_dock_title">Dock</string>
+    <string name="petal_dock_summary">Show the dock on Home</string>
 </resources>

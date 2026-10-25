@@ -38,6 +38,7 @@ public final class PetalRecentsPrefs {
     public static final String LAYOUT_GRID = "1";
     public static final String LAYOUT_LIST = "2";
     public static final String LAYOUT_ROUDABOUT = "3";
+    public static final String LAYOUT_STACK = "4";
 
     private static volatile String sLayout = LAYOUT_STOCK;
     /** App context captured at init time so lazy reads can happen without a caller. */
@@ -118,6 +119,11 @@ public final class PetalRecentsPrefs {
     public static boolean isRoudabout() {
         ensureRead();
         return LAYOUT_ROUDABOUT.equals(sLayout);
+    }
+
+    public static boolean isStack() {
+        ensureRead();
+        return LAYOUT_STACK.equals(sLayout);
     }
 
     /**

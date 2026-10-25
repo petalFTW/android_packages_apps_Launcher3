@@ -15,6 +15,8 @@
     limitations under the License.
 -->
 <resources>
+    <item type="id" name="action_screenshot" />
+
     <!-- Used for A11y actions for bubble bar -->
     <item type="id" name="action_move_left" />
     <item type="id" name="action_move_right" />

@@ -20,6 +20,10 @@ import android.animation.ObjectAnimator
 import android.animation.RectEvaluator
 import android.animation.ValueAnimator
 import android.content.Context
+import android.database.ContentObserver
+import android.os.Handler
+import android.os.Looper
+import android.provider.Settings
 import android.graphics.Canvas
 import android.graphics.Outline
 import android.graphics.Rect
@@ -32,16 +36,17 @@ import android.view.View
 import android.view.ViewAnimationUtils
 import android.view.ViewOutlineProvider
 import android.widget.FrameLayout
-import android.widget.ImageView
 import android.widget.TextView
 import androidx.core.animation.addListener
 import androidx.core.view.updateLayoutParams
 import com.android.app.animation.Interpolators
+import com.android.internal.graphics.drawable.PetalGlassDrawable
 import com.android.launcher3.LauncherAnimUtils.SCALE_PROPERTY
 import com.android.launcher3.LauncherAnimUtils.VIEW_TRANSLATE_X
 import com.android.launcher3.LauncherAnimUtils.VIEW_TRANSLATE_Y
 import com.android.launcher3.R
 import com.android.launcher3.Utilities
+import com.android.launcher3.petalos.PetalRecentsPrefs
 import com.android.launcher3.util.MultiPropertyFactory
 import com.android.launcher3.util.MultiPropertyFactory.FloatBiFunction
 import com.android.launcher3.util.MultiValueAlpha
@@ -62,7 +67,6 @@ constructor(
 ) : FrameLayout(context, attrs, defStyleAttr, defStyleRes), TaskViewIcon {
 
     private var iconView: IconView? = null
-    private var iconArrowView: ImageView? = null
     private var menuAnchorView: View? = null
 
     // Two textview so we can ellipsize the collapsed view and crossfade on expand to the full name.
@@ -71,6 +75,12 @@ constructor(
 
     private val backgroundRelativeLtrLocation = Rect()
     private val backgroundAnimationRectEvaluator = RectEvaluator(backgroundRelativeLtrLocation)
+    private val glass = PetalGlassDrawable(this, 24f, 0f, false)
+    private val glassSetting = "petal_recents_refraction"
+    private val glassObserver = object : ContentObserver(Handler(Looper.getMainLooper())) {
+        override fun onChange(selfChange: Boolean) = updateGlassEffect()
+    }
+    private val glassBounds = Rect()
 
     // Menu dimensions
     private val collapsedMenuDefaultWidth: Int =
@@ -109,8 +119,6 @@ constructor(
         resources.getDimensionPixelSize(R.dimen.task_thumbnail_icon_menu_app_icon_collapsed_size)
     private val iconMenuElevation =
         resources.getDimension(R.dimen.task_thumbnail_icon_menu_elevation)
-    private val arrowSize =
-        resources.getDimensionPixelSize(R.dimen.task_thumbnail_icon_menu_arrow_size)
     private val iconViewDrawableExpandedSize =
         resources.getDimensionPixelSize(R.dimen.task_thumbnail_icon_menu_app_icon_expanded_size)
     private val focusBorderWidth =
@@ -128,30 +136,25 @@ constructor(
     private val viewTranslationY: MultiPropertyFactory<View> =
         MultiPropertyFactory(this, VIEW_TRANSLATE_Y, INDEX_COUNT_TRANSLATION, SUM_AGGREGATOR)
 
-    // Width showing only the app icon and arrow. Max width should not be set to less than
-    // this.
-    private val minWidthAllowed = iconViewMarginStart + appIconSize + arrowSize + arrowMarginEnd
+    // don't let the name squash the damn icon
+    private val minWidthAllowed = iconViewMarginStart + appIconSize + arrowMarginEnd
     var maxWidth = Integer.MAX_VALUE
-        /**
-         * Sets the maximum width of this Icon Menu. This is usually used when space is limited for
-         * split screen.
-         */
+        // split screen can squeeze this pretty hard
         set(value) {
-            // Width showing only the app icon and arrow. Max width should not be set to less than
-            // this.
+            // don't squash the icon too
             field = max(value, minWidthAllowed)
         }
 
     var status: AppChipStatus = AppChipStatus.Collapsed
         private set
 
-    /**
-     * petalOS: grid tasks render the chip as an icon-only square (no app name, no arrow).
-     * Set from [setIconOrientation] based on the owning TaskView's grid state.
-     */
+    // grid chips ditch the name
     private var iconOnlyMode: Boolean = false
 
-    /** Width of the icon-only chip: side margins + icon start margin + icon + trailing margin. */
+    var isBelowTask: Boolean = false
+        private set
+
+    // enough room for the icon, that's it
     private val iconOnlyChipWidth: Int
         get() = backgroundMarginTopStart + iconViewMarginStart + appIconSize + backgroundMarginTopStart
 
@@ -233,11 +236,40 @@ constructor(
         focusBorderAnimator.drawBorder(canvas)
     }
 
+    override fun onAttachedToWindow() {
+        super.onAttachedToWindow()
+        context.contentResolver.registerContentObserver(
+            Settings.Secure.getUriFor(glassSetting), false, glassObserver)
+        updateGlassEffect()
+    }
+
+    override fun onDetachedFromWindow() {
+        context.contentResolver.unregisterContentObserver(glassObserver)
+        super.onDetachedFromWindow()
+    }
+
+    private fun updateGlassEffect() {
+        glass.setBackdropEnabled(Settings.Secure.getInt(context.contentResolver, glassSetting, 0) == 1)
+    }
+
+    override fun onDraw(canvas: Canvas) {
+        super.onDraw(canvas)
+        glassBounds.set(backgroundRelativeLtrLocation)
+        if (isLayoutRtl) {
+            glassBounds.left = width - backgroundRelativeLtrLocation.right
+            glassBounds.right = width - backgroundRelativeLtrLocation.left
+        }
+        glass.bounds = glassBounds
+        glass.setGlassCorners(cornerRadius.toFloat(), cornerRadius.toFloat())
+        glass.draw(canvas)
+    }
+
     override fun onFinishInflate() {
         super.onFinishInflate()
+        background = null
+        setWillNotDraw(false)
         iconView = findViewById(R.id.icon_view)
         appTitle = findViewById(R.id.icon_title)
-        iconArrowView = findViewById(R.id.icon_arrow)
         menuAnchorView = findViewById(R.id.icon_view_menu_anchor)
     }
 
@@ -265,16 +297,32 @@ constructor(
     override fun setIconOrientation(orientationState: RecentsOrientedState, isGridTask: Boolean) {
         val orientationHandler = orientationState.orientationHandler
         isLayoutNaturalToLauncher = orientationHandler.isLayoutNaturalToLauncher
-        // petalOS: grid tasks show an icon-only chip — hide the app name and dropdown arrow.
+        val taskView = parent as? TaskView
+        val container: RecentsViewContainer = RecentsViewContainer.containerFromContext(context)
+        val hideGridChip = PetalRecentsPrefs.isGrid()
+        multiValueAlpha[INDEX_GRID_ALPHA].value = if (hideGridChip) 0f else 1f
+        isBelowTask =
+            taskView?.type == TaskViewType.SINGLE &&
+                !isGridTask &&
+                !hideGridChip &&
+                !container.deviceProfile.deviceProperties.isTablet &&
+                isLayoutNaturalToLauncher
+        appTitle?.apply {
+            gravity = if (isBelowTask) Gravity.CENTER else Gravity.START or Gravity.CENTER_VERTICAL
+            textAlignment = if (isBelowTask) TEXT_ALIGNMENT_CENTER else TEXT_ALIGNMENT_VIEW_START
+            if (isBelowTask) ellipsize = TruncateAt.END
+        }
+        // grid gets just the icon, less clutter
         if (iconOnlyMode != isGridTask) {
             iconOnlyMode = isGridTask
             appTitle?.visibility = if (isGridTask) View.GONE else View.VISIBLE
-            iconArrowView?.visibility = if (isGridTask) View.GONE else View.VISIBLE
         }
         val anchorLayoutParams = menuAnchorView!!.layoutParams as LayoutParams
         if (orientationHandler.isLayoutNaturalToLauncher) {
             anchorLayoutParams.gravity = Gravity.START
-            anchorLayoutParams.marginStart = backgroundMarginTopStart
+            anchorLayoutParams.marginStart =
+                if (isBelowTask) getCollapsedBackgroundLtrBounds().left
+                else backgroundMarginTopStart
         } else {
             anchorLayoutParams.gravity = Gravity.LEFT
             anchorLayoutParams.marginStart = 0
@@ -317,7 +365,8 @@ constructor(
 
         // Layout Params for the Icon View
         val iconParams = iconView!!.layoutParams as LayoutParams
-        val iconMarginStartRelativeToParent = iconViewMarginStart + backgroundMarginTopStart
+        val iconMarginStartRelativeToParent =
+            iconViewMarginStart + if (isBelowTask) 0 else backgroundMarginTopStart
         orientationHandler.setIconAppChipChildrenParams(iconParams, iconMarginStartRelativeToParent)
 
         iconView!!.layoutParams = iconParams
@@ -325,25 +374,20 @@ constructor(
 
         // Layout Params for the collapsed Icon Text View
         val textMarginStart =
-            iconMarginStartRelativeToParent + appIconSize + appNameHorizontalMarginCollapsed
+            if (isBelowTask) {
+                (expandedMenuDefaultWidth -
+                    calculateCollapsedTextWidth(collapsedBackgroundBounds.width())) / 2
+            } else {
+                iconMarginStartRelativeToParent + appIconSize + appNameHorizontalMarginCollapsed
+            }
         val iconTextCollapsedParams = appTitle!!.layoutParams as LayoutParams
         orientationHandler.setIconAppChipChildrenParams(iconTextCollapsedParams, textMarginStart)
         iconTextCollapsedParams.width =
             calculateCollapsedTextWidth(collapsedBackgroundBounds.width())
         appTitle?.layoutParams = iconTextCollapsedParams
+        if (isBelowTask) updateBelowTaskIconPosition()
 
-        // Layout Params for the Icon Arrow View
-        val iconArrowParams = iconArrowView!!.layoutParams as LayoutParams
-        val arrowMarginStart = collapsedBackgroundBounds.right - arrowMarginEnd - arrowSize
-        orientationHandler.setIconAppChipChildrenParams(iconArrowParams, arrowMarginStart)
-        iconArrowView!!.pivotY = iconArrowParams.height / 2f
-        iconArrowView!!.layoutParams = iconArrowParams
-
-        // This method is called twice sometimes (like when rotating split tasks). It is called
-        // once before onMeasure and onLayout, and again after onMeasure but before onLayout with
-        // a new width. This happens because we update widths on rotation and on measure of
-        // grouped task views. Calling requestLayout() does not guarantee a call to onMeasure if
-        // it has just measured, so we explicitly call it here.
+        // rotation calls this twice; requestLayout alone misses the new width
         measure(
             MeasureSpec.makeMeasureSpec(layoutParams.width, MeasureSpec.EXACTLY),
             MeasureSpec.makeMeasureSpec(layoutParams.height, MeasureSpec.EXACTLY),
@@ -352,29 +396,52 @@ constructor(
 
     private fun enableMarquee(isEnabled: Boolean) {
         // Marquee should not be enabled when is running test harness.
-        val isMarqueeEnabled = isEnabled && !Utilities.isRunningInTestHarness()
+        val isMarqueeEnabled = isEnabled && !isBelowTask && !Utilities.isRunningInTestHarness()
         appTitle?.let {
-            it.ellipsize = if (isMarqueeEnabled) TruncateAt.MARQUEE else null
+            it.ellipsize =
+                if (isMarqueeEnabled) TruncateAt.MARQUEE
+                else if (isBelowTask) TruncateAt.END
+                else null
             it.isSelected = isMarqueeEnabled
         }
     }
 
-    /**
-     * Calculates the width available for the collapsed text (app name) within the view.
-     *
-     * This function determines the maximum width that the app name can occupy when the view is in
-     * its collapsed state. It considers various factors such as the maximum allowed width, the
-     * bounds of the collapsed background, the size of the app icon, the arrow, and the margins
-     * around these elements.
-     *
-     * @return The calculated width available for the collapsed text (app name).
-     */
+    fun layoutBelowTask(taskWidth: Int, taskHeight: Int, gap: Int) {
+        // center the actual pill, not its lopsided view bounds
+        val bounds = getCollapsedBackgroundLtrBounds()
+        val backgroundLeft = if (isLayoutRtl) measuredWidth - bounds.right else bounds.left
+        val left = (taskWidth - bounds.width()) / 2 - backgroundLeft
+        val top = taskHeight + gap - bounds.top
+        layout(left, top, left + measuredWidth, top + measuredHeight)
+    }
+
+    private fun updateBelowTaskIconPosition() {
+        // one fixed layout, the glass and icon do the growing
+        val collapsedWidth = getCollapsedBackgroundLtrBounds().width()
+        val expansion =
+            ((backgroundRelativeLtrLocation.width() - collapsedWidth).toFloat() /
+                (expandedMenuDefaultWidth - collapsedWidth).coerceAtLeast(1)).coerceIn(0f, 1f)
+        val scale = 1f + (iconViewDrawableExpandedSize / appIconSize.toFloat() - 1f) * expansion
+        iconView?.apply {
+            scaleX = scale
+            scaleY = scale
+            val offset = backgroundRelativeLtrLocation.left + appIconSize * (scale - 1f) / 2f
+            translationX = if (isLayoutRtl) -offset else offset
+        }
+        appTitle?.translationX = 0f
+    }
+
+    // name gets whatever room the icon left
     private fun calculateCollapsedTextWidth(width: Int): Int {
+        if (isBelowTask) {
+            // leave the same room on both sides or the label looks drunk
+            val sideSpace = iconViewMarginStart + appIconSize + appNameHorizontalMarginCollapsed
+            return (width - 2 * sideSpace).coerceAtLeast(0)
+        }
         val collapsedTextWidth =
             (width -
                 iconViewMarginStart -
                 appIconSize -
-                arrowSize -
                 appNameHorizontalMarginCollapsed -
                 arrowMarginEnd)
 
@@ -382,13 +449,20 @@ constructor(
         return minOf(collapsedTextWidth, spaceLeftForText).coerceAtLeast(0)
     }
 
-    private fun calculateExpandedTextWidth(width: Int): Int =
-        width -
+    private fun calculateExpandedTextWidth(width: Int): Int {
+        if (isBelowTask) {
+            val sideSpace =
+                backgroundMarginTopStart + iconViewMarginStart +
+                    (appIconSize + iconViewDrawableExpandedSize) / 2 +
+                    appNameHorizontalMarginCollapsed
+            return (width - 2 * sideSpace).coerceAtLeast(0)
+        }
+        return width -
             iconViewMarginStart -
             iconViewDrawableExpandedSize -
-            arrowSize -
             appNameHorizontalMarginExpanded -
             arrowMarginEnd
+    }
 
     override fun setIconColorTint(color: Int, amount: Float) {
         // RecentsView's COLOR_TINT animates between 0 and 0.5f, we want to hide the app chip menu.
@@ -398,6 +472,10 @@ constructor(
 
     override fun setContentAlpha(alpha: Float) {
         multiValueAlpha[INDEX_CONTENT_ALPHA].value = alpha
+    }
+
+    fun setDismissAlpha(alpha: Float) {
+        multiValueAlpha[INDEX_DISMISS_ALPHA].value = alpha
     }
 
     override fun setModalAlpha(alpha: Float) {
@@ -416,11 +494,7 @@ constructor(
     fun getSplitTranslationX(): MultiPropertyFactory<View>.MultiProperty =
         viewTranslationX.get(INDEX_SPLIT_TRANSLATION)
 
-    /**
-     * Sets the view split x-axis translation
-     *
-     * @param value x-axis translation
-     */
+    // sideways nudge for split tasks
     fun setSplitTranslationX(value: Float) {
         getSplitTranslationX().value = value
     }
@@ -429,11 +503,7 @@ constructor(
     fun getSplitTranslationY(): MultiPropertyFactory<View>.MultiProperty =
         viewTranslationY[INDEX_SPLIT_TRANSLATION]
 
-    /**
-     * Sets the view split y-axis translation
-     *
-     * @param value y-axis translation
-     */
+    // split tasks need a vertical shove too
     fun setSplitTranslationY(value: Float) {
         getSplitTranslationY().value = value
     }
@@ -463,27 +533,30 @@ constructor(
                     initialBackground,
                     expandedBackgroundBounds,
                 )
-            backgroundAnimator.addUpdateListener { invalidateOutline() }
+            backgroundAnimator.addUpdateListener {
+                if (isBelowTask) updateBelowTaskIconPosition()
+                invalidateOutline()
+                invalidate()
+            }
 
             val iconViewScaling = iconViewDrawableExpandedSize / appIconSize.toFloat()
-            val arrowTranslationX =
-                (expandedBackgroundBounds.right - collapsedBackgroundBounds.right).toFloat()
             val iconCenterToTextCollapsed = appIconSize / 2f + appNameHorizontalMarginCollapsed
             val iconCenterToTextExpanded =
                 iconViewDrawableExpandedSize / 2f + appNameHorizontalMarginCollapsed
             val textTranslationX = iconCenterToTextExpanded - iconCenterToTextCollapsed
 
             val textTranslationXWithRtl = if (isRtl) -textTranslationX else textTranslationX
-            val arrowTranslationWithRtl = if (isRtl) -arrowTranslationX else arrowTranslationX
 
-            animator!!.playTogether(
-                backgroundAnimator,
-                ObjectAnimator.ofFloat(iconView, SCALE_X, iconViewScaling),
-                ObjectAnimator.ofFloat(iconView, SCALE_Y, iconViewScaling),
-                ObjectAnimator.ofFloat(appTitle, TRANSLATION_X, textTranslationXWithRtl),
-                ObjectAnimator.ofFloat(iconArrowView, TRANSLATION_X, arrowTranslationWithRtl),
-                ObjectAnimator.ofFloat(iconArrowView, SCALE_Y, -1f),
-            )
+            if (isBelowTask) {
+                animator!!.playTogether(backgroundAnimator)
+            } else {
+                animator!!.playTogether(
+                    backgroundAnimator,
+                    ObjectAnimator.ofFloat(iconView, SCALE_X, iconViewScaling),
+                    ObjectAnimator.ofFloat(iconView, SCALE_Y, iconViewScaling),
+                    ObjectAnimator.ofFloat(appTitle, TRANSLATION_X, textTranslationXWithRtl),
+                )
+            }
             animator!!.duration = MENU_BACKGROUND_REVEAL_DURATION.toLong()
             status = AppChipStatus.Expanded
         } else {
@@ -504,28 +577,33 @@ constructor(
                     initialBackground,
                     collapsedBackgroundBounds,
                 )
-            backgroundAnimator.addUpdateListener { valueAnimator: ValueAnimator? ->
+            backgroundAnimator.addUpdateListener {
+                if (isBelowTask) updateBelowTaskIconPosition()
                 invalidateOutline()
+                invalidate()
             }
 
-            animator!!.playTogether(
-                expandedTextClipAnim,
-                backgroundAnimator,
-                ObjectAnimator.ofFloat(iconView, SCALE_PROPERTY, 1f),
-                ObjectAnimator.ofFloat(appTitle, TRANSLATION_X, 0f),
-                ObjectAnimator.ofFloat(iconArrowView, TRANSLATION_X, 0f),
-                ObjectAnimator.ofFloat(iconArrowView, SCALE_Y, 1f),
-            )
+            if (isBelowTask) {
+                animator!!.playTogether(backgroundAnimator)
+            } else {
+                animator!!.playTogether(
+                    expandedTextClipAnim,
+                    backgroundAnimator,
+                    ObjectAnimator.ofFloat(iconView, SCALE_PROPERTY, 1f),
+                    ObjectAnimator.ofFloat(appTitle, TRANSLATION_X, 0f),
+                )
+            }
             animator!!.duration = MENU_BACKGROUND_HIDE_DURATION.toLong()
             status = AppChipStatus.Collapsed
             sendToBack()
         }
 
         if (!animated) animator!!.duration = 0
-        animator!!.interpolator = Interpolators.EMPHASIZED
+        animator!!.interpolator =
+            if (!isRevealing && isBelowTask) Interpolators.EMPHASIZED_ACCELERATE
+            else Interpolators.EMPHASIZED
 
-        // Increase the chip and appTitle size before the animation starts when it's expanding.
-        // And decrease the size after the animation when is collapsing.
+        // grow before opening, shrink after closing this thing
         animator!!.addListener(
             onStart = {
                 // Hide focused border during expanding/collapsing animation
@@ -550,19 +628,9 @@ constructor(
         return animator!!
     }
 
-    /**
-     * Updates the width of the app title based on the current [AppChipStatus].
-     *
-     * This function dynamically adjusts the width of the `appTitle` TextView depending on whether
-     * the app chip is in an expanded or collapsed state.
-     * - When the chip is [AppChipStatus.Expanded], the title width is set to
-     *   [expandedMaxTextWidth], allowing the title to potentially take up more space.
-     * - When the chip is [AppChipStatus.Collapsed], the title width is calculated based on the
-     *   width of the collapsed background. This ensures the title fits within the smaller,
-     *   collapsed chip boundaries. The width is then determined by calling
-     *   [calculateCollapsedTextWidth].
-     */
+    // name follows the chip width, not the other way round
     private fun updateChipSize() {
+        if (isBelowTask) return
         val chipWidth = getChipWidth()
         when (status) {
             AppChipStatus.Expanded -> {
@@ -580,10 +648,13 @@ constructor(
     }
 
     private fun getCollapsedBackgroundLtrBounds(): Rect {
-        // petalOS: grid tasks use a square icon-only background.
+        // grid doesn't need the wide pill
         val width = if (iconOnlyMode) iconOnlyChipWidth else minimumWidth
         val bounds = Rect(0, 0, width, collapsedMenuDefaultHeight)
-        bounds.offset(backgroundMarginTopStart, backgroundMarginTopStart)
+        bounds.offset(
+            if (isBelowTask) (expandedMenuDefaultWidth - width) / 2 else backgroundMarginTopStart,
+            backgroundMarginTopStart,
+        )
         return bounds
     }
 
@@ -593,9 +664,8 @@ constructor(
     private fun getCollapsedBackgroundWidth() = getCollapsedBackgroundLtrBounds().right
 
     private fun getChipWidth(): Int {
-        // TODO(b/292269949): When in fake orientation, the width of the chip remains expanded
-        //  to prevent wrong translation due to chip rotation and anchor.
-        if (!isLayoutNaturalToLauncher) return expandedMenuDefaultWidth
+        // fake rotation needs the wide chip or the anchor goes sideways
+        if (isBelowTask || !isLayoutNaturalToLauncher) return expandedMenuDefaultWidth
         return when (status) {
             AppChipStatus.Expanded -> expandedMenuDefaultWidth
             AppChipStatus.Collapsed -> getCollapsedBackgroundWidth()
@@ -603,8 +673,7 @@ constructor(
     }
 
     private fun cancelInProgressAnimations() {
-        // We null the `AnimatorSet` because it holds references to the `Animators` which aren't
-        // expecting to be mutable and will cause a crash if they are re-used.
+        // reusing these animators crashes the damn thing
         if (animator != null && animator!!.isStarted) {
             animator!!.cancel()
             animator = null
@@ -640,10 +709,7 @@ constructor(
         }
     }
 
-    /**
-     * We need to over-ride here due to liveTile mode, the [OverviewInputConsumer] is added, which
-     * consumes all [InputEvent]'s and focus isn't moved correctly.
-     */
+    // live tile eats key events, so move focus ourselves
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
         if (event.action != KeyEvent.ACTION_DOWN) return super.dispatchKeyEvent(event)
 
@@ -684,12 +750,14 @@ constructor(
 
         private const val Z_INDEX_FRONT = 10f
 
-        private const val NUM_ALPHA_CHANNELS = 4
+        private const val NUM_ALPHA_CHANNELS = 6
         private const val INDEX_CONTENT_ALPHA = 0
         private const val INDEX_COLOR_FILTER_ALPHA = 1
         private const val INDEX_MODAL_ALPHA = 2
         /** Used to hide the app chip for 90:10 flex split. */
         private const val INDEX_MINIMUM_RATIO_ALPHA = 3
+        private const val INDEX_DISMISS_ALPHA = 4
+        private const val INDEX_GRID_ALPHA = 5
 
         private const val INDEX_SPLIT_TRANSLATION = 0
         private const val INDEX_MENU_TRANSLATION = 1
