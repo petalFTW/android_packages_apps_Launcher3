@@ -23,11 +23,7 @@ import com.android.launcher3.util.OnWallpaperColorsChangedListener;
 import com.android.launcher3.util.WallpaperColorHints;
 import com.android.launcher3.util.Themes;
 
-/**
- * Shared, matte Petal Harmony material for the shelf and folders. Uses Monet's low-chroma neutral
- * ramp, not the wallpaper's dominant accent. No wallpaper bitmaps, blur windows, or idle animation.
- * All palette work is event driven; the gradient is rebuilt only after palette or size changes.
- */
+/** matte shelf material, monet neutrals not the loud accent. no blur, no idle redraws */
 public final class AtelierSurface implements View.OnAttachStateChangeListener,
         SharedPreferences.OnSharedPreferenceChangeListener, OnColorHintListener,
         OnWallpaperColorsChangedListener, ComponentCallbacks {
@@ -52,7 +48,7 @@ public final class AtelierSurface implements View.OnAttachStateChangeListener,
         mView = view;
         mFolder = folder;
         Context context = view.getContext();
-        // Null before the first unlock; defaults hold until the view is rebuilt.
+        // null before first unlock, defaults it is
         mPrefs = PetalLauncherPrefs.prefs(context);
         mHints = WallpaperColorHints.get(context);
         mStroke = context.getResources().getDisplayMetrics().density * .5f;
@@ -117,7 +113,7 @@ public final class AtelierSurface implements View.OnAttachStateChangeListener,
         boolean harmony = PetalLauncherPrefs.enabled(context, PetalLauncherPrefs.WALLPAPER_HARMONY);
         boolean darkTheme = (context.getResources().getConfiguration().uiMode
                 & Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES;
-        // Folder text belongs to the activity theme. Shelf tone may follow wallpaper hints.
+        // folders go off the theme text, shelf can chase the wallpaper
         boolean dark = mFolder ? ColorUtils.calculateLuminance(
                 Themes.getAttrColor(context, R.attr.folderTextColor)) > .5 : !harmony ? darkTheme
                 : (mHints.getHints() & WallpaperColors.HINT_SUPPORTS_DARK_TEXT) == 0;
@@ -128,16 +124,16 @@ public final class AtelierSurface implements View.OnAttachStateChangeListener,
                 && PetalLauncherPrefs.enabled(context, PetalLauncherPrefs.SHELF_SURFACE));
         int neutral = dark ? 0xFF252F2A : 0xFFEDF2EC;
         if (harmony) {
-            // Keep the material's green-grey identity even when Monet's neutral is orange/brown.
+            // keep it green-grey even when monet goes full orange
             neutral = ColorUtils.blendARGB(neutral, dark ? mHints.getPalette().darkSurface
                     : mHints.getPalette().lightSurface, .45f);
         }
-        // Bloom adds a small amount of Monet's subdued secondary, never accent1_500.
+        // bloom gets a dash of the quiet secondary, never accent1_500
         if (bloom && harmony) {
             neutral = ColorUtils.blendARGB(neutral, dark ? mHints.getPalette().darkSurface
                     : mHints.getPalette().lightSurface, .35f);
         }
-        // Keep open-folder text legible even on a white or highly detailed wallpaper.
+        // thick enough that text survives a white wallpaper
         int opacity = mFolder ? 250 : bloom ? 232 : 246;
         mTopColor = ColorUtils.setAlphaComponent(ColorUtils.blendARGB(neutral,
                 Color.WHITE, dark ? .035f : .12f), opacity);
@@ -162,8 +158,7 @@ public final class AtelierSurface implements View.OnAttachStateChangeListener,
                     mTopColor, mBottomColor, Shader.TileMode.CLAMP);
         }
         radius = Math.min(radius, Math.min(width, height) / 2f);
-        // Bounded contact separation, rendered as a few static contours instead of a blur layer.
-        // Unlike a bitmap plate, this follows the live container bounds during launcher transforms.
+        // cheapo contact shadow, 3 rings, tracks the bounds mid-transform
         if (!mFolder) {
             mPaint.setShader(null);
             mPaint.setStyle(Paint.Style.FILL);

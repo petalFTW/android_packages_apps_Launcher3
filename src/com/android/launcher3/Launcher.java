@@ -1449,6 +1449,8 @@ public class Launcher extends StatefulActivity<LauncherState>
 
     public void onPetalPopupDepth(View popup, View selected, boolean showing) { }
 
+    public void onPetalFolderDepth(boolean open) { }
+
     /**
      * Add a shortcut to the workspace or to a Folder.
      *

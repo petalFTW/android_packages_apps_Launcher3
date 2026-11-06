@@ -75,7 +75,8 @@ public class BaseDepthController {
     private static final int DEPTH_INDEX_WIDGET = 1;
     private static final int DEPTH_INDEX_EDIT_DRAG = 2;
     private static final int DEPTH_INDEX_POPUP = 3;
-    private static final int DEPTH_INDEX_COUNT = 4;
+    private static final int DEPTH_INDEX_FOLDER = 4;
+    private static final int DEPTH_INDEX_COUNT = 5;
 
     // b/291401432
     private static final String TAG = "BaseDepthController";
@@ -88,6 +89,8 @@ public class BaseDepthController {
     /** Temporary wallpaper blur while moving an icon in home edit mode. */
     public final MultiProperty editDragDepth;
     public final MultiProperty popupDepth;
+    // open folder frosts the grid same as the qs shade does
+    public final MultiProperty folderDepth;
 
     /**
      * Blur radius when completely zoomed out, in pixels.
@@ -128,6 +131,9 @@ public class BaseDepthController {
 
     protected boolean mWaitingOnSurfaceValidity;
 
+    // what the grid frost last saw, popup->drag handoff left it stuck on
+    private boolean mPopupFrostApplied;
+
     private SurfaceControl mBlurSurface = null;
     /**
      * Info for early wakeup requests to SurfaceFlinger.
@@ -153,6 +159,7 @@ public class BaseDepthController {
         widgetDepth = depthProperty.get(DEPTH_INDEX_WIDGET);
         editDragDepth = depthProperty.get(DEPTH_INDEX_EDIT_DRAG);
         popupDepth = depthProperty.get(DEPTH_INDEX_POPUP);
+        folderDepth = depthProperty.get(DEPTH_INDEX_FOLDER);
         mEarlyWakeupInfo.token = new Binder();
         mEarlyWakeupInfo.trace = BaseDepthController.class.getName();
     }
@@ -246,6 +253,7 @@ public class BaseDepthController {
                 && blurAmount != 1f) {
             Log.d(TAG, "Skipping small blur delta. newBlur: " + newBlur + " previousBlur: "
                     + previousBlur + " delta: " + delta + " surface: " + blurSurface);
+            if (mPopupFrostApplied != petalFrostWanted()) blurWorkspaceDepthTargets();
             return;
         }
         mCurrentBlur = newBlur;
@@ -319,7 +327,8 @@ public class BaseDepthController {
     @VisibleForTesting
     public boolean blurWorkspaceDepthTargets() {
         boolean popupShowing = popupDepth.getValue() > 0f;
-        if (!Flags.allAppsBlur() && !popupShowing) {
+        mPopupFrostApplied = petalFrostWanted();
+        if (!Flags.allAppsBlur() && !mPopupFrostApplied) {
             mLauncher.getDepthBlurTargets().forEach(target -> target.setRenderEffect(null));
             mLauncher.getAppsView().setRenderEffect(null);
             return false;
@@ -329,7 +338,8 @@ public class BaseDepthController {
                 ? stateManager.getTargetState() : stateManager.getState();
         // Only blur workspace if the current state wants to blur based on the target state.
         boolean shouldBlurWorkspace =
-                popupShowing || stateManager.getCurrentStableState().shouldBlurWorkspace(targetState);
+                mPopupFrostApplied
+                        || stateManager.getCurrentStableState().shouldBlurWorkspace(targetState);
 
         RenderEffect blurEffect = shouldBlurWorkspace && mCurrentBlur > 0
                 ? RenderEffect.createBlurEffect(mCurrentBlur, mCurrentBlur, Shader.TileMode.DECAL)
@@ -343,6 +353,10 @@ public class BaseDepthController {
         mLauncher.getDepthBlurTargets().forEach(target -> target.setRenderEffect(blurEffect));
         mLauncher.getAppsView().setRenderEffect(popupShowing ? blurEffect : null);
         return shouldBlurWorkspace;
+    }
+
+    private boolean petalFrostWanted() {
+        return popupDepth.getValue() > 0f || folderDepth.getValue() > 0f;
     }
 
     private void setDepth(float depth) {
@@ -360,6 +374,8 @@ public class BaseDepthController {
             depthF = depthI / 256f;
         }
         if (Float.compare(mDepth, depthF) == 0) {
+            // spring-loaded depth swallows the popup fade, so icons stayed frosted mid drag. nope
+            if (mPopupFrostApplied != petalFrostWanted()) blurWorkspaceDepthTargets();
             return;
         }
         mDepth = depthF;

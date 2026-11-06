@@ -16,10 +16,7 @@ import com.android.internal.graphics.drawable.BackgroundBlurDrawable;
 
 import java.util.function.Consumer;
 
-/**
- * iOS-style dock material: the live wallpaper blurred behind a translucent, light tint with a
- * hairline top highlight. Falls back to a denser tint when cross-window blur is unavailable.
- */
+/** blurred wallpaper dock w/ a hairline top lip, thicker tint if blur's off */
 public final class GlassDock implements View.OnAttachStateChangeListener {
     private static final int TINT_OVER_BLUR_LIGHT = 0x4DFFFFFF;
     private static final int TINT_OVER_BLUR_DARK = 0x33FFFFFF;
@@ -49,7 +46,7 @@ public final class GlassDock implements View.OnAttachStateChangeListener {
         mEdge.setStyle(Paint.Style.STROKE);
         mEdge.setStrokeWidth(mStroke);
         mAlphaWatch = () -> {
-            // Parent fades don't re-record this view; re-draw so the blur alpha follows them.
+            // parent fades dont re-record us, poke it so the blur fades too
             if (mBlur != null && effectiveAlpha() != mLastAlpha) mView.invalidate();
             return true;
         };
@@ -61,7 +58,7 @@ public final class GlassDock implements View.OnAttachStateChangeListener {
         if (view.isAttachedToWindow()) onViewAttachedToWindow(view);
     }
 
-    /** Draws the dock in {@code left..bottom}; the caller owns layout, this owns material. */
+    // caller does layout, we just paint the thing
     public void draw(Canvas canvas, float left, float top, float right, float bottom,
             float radius) {
         if (right <= left || bottom <= top) return;
@@ -73,7 +70,7 @@ public final class GlassDock implements View.OnAttachStateChangeListener {
         mFill.setColor(blurred ? (dark ? TINT_OVER_BLUR_DARK : TINT_OVER_BLUR_LIGHT)
                 : (dark ? TINT_NO_BLUR_DARK : TINT_NO_BLUR_LIGHT));
         canvas.drawRoundRect(mBounds, radius, radius, mFill);
-        // Lit from above: bright along the top edge, gone by the middle.
+        // lit from up top, dead by the middle
         if (mEdgeTop != top || mEdgeHeight != mBounds.height()) {
             mEdgeTop = top;
             mEdgeHeight = mBounds.height();
@@ -109,8 +106,7 @@ public final class GlassDock implements View.OnAttachStateChangeListener {
         return true;
     }
 
-    // The blur is composited by SurfaceFlinger, so view alpha (e.g. app-launch fades) must be
-    // applied to it explicitly or the frosted region would linger after the icons fade.
+    // SF owns the blur so view alpha doesnt reach it, frost hung around after launches
     private float effectiveAlpha() {
         float alpha = 1f;
         for (View v = mView; v != null; ) {

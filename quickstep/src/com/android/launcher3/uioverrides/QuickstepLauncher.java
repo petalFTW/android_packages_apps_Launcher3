@@ -286,6 +286,7 @@ public class QuickstepLauncher extends Launcher implements RecentsViewContainer,
     private View mPetalDepthPopup;
     private ImageView mPetalPopupPreview;
     private Animator mPetalPopupDepthAnimator;
+    private Animator mPetalFolderDepthAnimator;
     private QuickstepTransitionManager mAppTransitionManager;
 
     private OverviewActionsView<?> mActionsView;
@@ -1687,6 +1688,16 @@ public class QuickstepLauncher extends Launcher implements RecentsViewContainer,
             mDepthController.editDragDepth.animateToValue(dragging ? 0.25f : 0f)
                     .setDuration(dragging ? 180 : 220).start();
         }
+    }
+
+    @Override
+    public void onPetalFolderDepth(boolean open) {
+        if (mDepthController == null) return;
+        if (mPetalFolderDepthAnimator != null) mPetalFolderDepthAnimator.cancel();
+        // 0.3 is where the blur maxes out anyway, more just zooms the wallpaper like a twat
+        mPetalFolderDepthAnimator = mDepthController.folderDepth.animateToValue(open ? 0.3f : 0f)
+                .setDuration(open ? 200 : 180);
+        mPetalFolderDepthAnimator.start();
     }
 
     @Override

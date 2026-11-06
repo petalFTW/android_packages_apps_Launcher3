@@ -267,6 +267,7 @@ public class Folder extends AbstractFloatingView implements ClipPathView, DragSo
 
     private final @NonNull GradientDrawable mBackground;
     private final PetalFolderGlass mPetalGlass = new PetalFolderGlass(this);
+    private boolean mPetalFrosting;
 
     /**
      * Used to inflate the Workspace from XML.
@@ -548,6 +549,17 @@ public class Folder extends AbstractFloatingView implements ClipPathView, DragSo
     protected void onDetachedFromWindow() {
         super.onDetachedFromWindow();
         mFolderName.removeOnFocusChangeListener(this);
+        setPetalFrost(false);
+    }
+
+    // only the folder that frosted it gets to unfrost it, otherwise folder swaps flicker
+    private void setPetalFrost(boolean frost) {
+        if (mPetalFrosting == frost) return;
+        mPetalFrosting = frost;
+        // taskbar folders get no frost behind them, so they keep the thick tint
+        if (!(mActivityContext instanceof Launcher launcher)) return;
+        if (frost) mPetalGlass.refreshBackdrop();
+        launcher.onPetalFolderDepth(frost);
     }
 
     @Override
@@ -738,6 +750,7 @@ public class Folder extends AbstractFloatingView implements ClipPathView, DragSo
         updateTextViewFocus();
 
         mIsOpen = true;
+        setPetalFrost(true);
 
         BaseDragLayer dragLayer = mActivityContext.getDragLayer();
         // Just verify that the folder hasn't already been added to the DragLayer.
@@ -892,6 +905,7 @@ public class Folder extends AbstractFloatingView implements ClipPathView, DragSo
     @Override
     protected void handleClose(boolean animate) {
         mIsOpen = false;
+        setPetalFrost(false);
         mContent.setCanAnnouncePageDescriptionForFolder(false);
 
         if (!animate && mCurrentAnimator != null && mCurrentAnimator.isRunning()) {
