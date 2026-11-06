@@ -9,6 +9,7 @@ import android.net.Uri
 import android.util.AtomicFile
 import com.android.launcher3.dagger.LauncherComponentProvider.appComponent
 import com.android.launcher3.graphics.theme.ThemePreference
+import com.android.launcher3.util.WallpaperColorHints
 import java.io.File
 import java.security.MessageDigest
 
@@ -16,7 +17,10 @@ enum class SubjectIconStyle(val key: String) {
     FROSTED("frosted"),
     SHEEN("sheen"),
     REFRACTION("refraction"),
-    SOLID("solid");
+    WALLPAPER("wallpaper"),
+    SOLID("solid"),
+    // App background tile with the logo punched through to the wallpaper.
+    SEE_THROUGH("seethrough");
 
     companion object {
         fun parse(value: String?): SubjectIconStyle =
@@ -104,14 +108,17 @@ object SubjectIconStore {
         val state = if (prefs.getString("state", "idle") == "processing" &&
             !SubjectIconService.isRunning) "interrupted" else prefs.getString("state", "idle")
         val styleKey = style(context).key
+        val wallpaper = WallpaperColorHints.get(context)
         return MatrixCursor(arrayOf("enabled", "state", "done", "total", "fallbacks", "cached",
-            "error", "style", "monochrome"))
+            "error", "style", "monochrome", "wallpaper_seed", "wallpaper_colors_available"))
             .apply {
                 addRow(arrayOf(if (active) 1 else 0, state, prefs.getInt("done", 0),
                     prefs.getInt("total", 0), prefs.getInt("fallbacks", 0),
                     if (current(context)?.isDirectory == true) 1 else 0,
                     prefs.getString("error", ""), styleKey,
-                    if (monochrome(context)) 1 else 0))
+                    if (monochrome(context)) 1 else 0,
+                    Integer.toHexString(wallpaper.palette.seed),
+                    if (wallpaper.hasWallpaperColors) 1 else 0))
             }
     }
 

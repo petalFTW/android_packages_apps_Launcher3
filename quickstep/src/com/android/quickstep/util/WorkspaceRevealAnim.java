@@ -32,16 +32,15 @@ import android.animation.ObjectAnimator;
 import android.util.FloatProperty;
 import android.util.Log;
 import android.view.View;
-import android.view.ViewGroup;
 
 import com.android.app.animation.Interpolators;
-import com.android.launcher3.CellLayout;
 import com.android.launcher3.Hotseat;
 import com.android.launcher3.Launcher;
-import com.android.launcher3.PetalLauncherPrefs;
 import com.android.launcher3.R;
 import com.android.launcher3.Workspace;
 import com.android.launcher3.anim.PendingAnimation;
+import com.android.launcher3.anim.PetalHomeReturnAnimation;
+import com.android.launcher3.anim.PreparedHomeReveal;
 import com.android.launcher3.statehandlers.DepthController;
 import com.android.launcher3.states.StateAnimationConfig;
 import com.android.launcher3.uioverrides.QuickstepLauncher;
@@ -67,6 +66,7 @@ public class WorkspaceRevealAnim {
 
     private final float mScaleStart;
     private final AnimatorSet mAnimators = new AnimatorSet();
+    private PreparedHomeReveal mHomeItemReveal;
 
     public WorkspaceRevealAnim(Launcher launcher, boolean animateOverviewScrim) {
         prepareToAnimate(launcher, animateOverviewScrim);
@@ -80,8 +80,9 @@ public class WorkspaceRevealAnim {
         // Add reveal animations.
         addRevealAnimatorsForView(workspace, WORKSPACE_SCALE_PROPERTY);
         addRevealAnimatorsForView(launcher.getHotseat(), HOTSEAT_SCALE_PROPERTY);
-        if (PetalLauncherPrefs.enabled(launcher, PetalLauncherPrefs.HOME_ANIMATION)) {
-            addHomeItemRevealAnimators(launcher);
+        if (PetalHomeReturnAnimation.isEnabled(launcher)) {
+            mHomeItemReveal = PetalHomeReturnAnimation.prepare(launcher);
+            mAnimators.play(mHomeItemReveal.getAnimator());
         }
 
         // Add overview scrim animation.
@@ -102,19 +103,18 @@ public class WorkspaceRevealAnim {
 
         // Add sysui scrim animation.
         mAnimators.play(launcher.getRootView().getSysUiScrim()
-                .getSysUIMultiplier().animateToValue(0f, 1f));
-
-        mAnimators.setDuration(DURATION_MS);
-        mAnimators.setInterpolator(Interpolators.DECELERATED_EASE);
+                .getSysUIMultiplier().animateToValue(0f, 1f).setDuration(DURATION_MS));
         mAnimators.addListener(new AnimatorListenerAdapter() {
             @Override
             public void onAnimationCancel(Animator animation) {
+                if (mHomeItemReveal != null) mHomeItemReveal.cancel();
                 super.onAnimationCancel(animation);
                 Log.d(TAG, "onAnimationCancel");
             }
 
             @Override
             public void onAnimationEnd(Animator animation) {
+                if (mHomeItemReveal != null) mHomeItemReveal.cancel();
                 super.onAnimationEnd(animation);
                 Log.d(TAG, "onAnimationEnd: workspace alpha = " + workspace.getAlpha());
             }
@@ -137,49 +137,6 @@ public class WorkspaceRevealAnim {
             public void onAnimationEnd(Animator animation) {
                 scaleProperty.set(v, 1f);
                 v.setAlpha(1f);
-            }
-        });
-    }
-
-    private void addHomeItemRevealAnimators(Launcher launcher) {
-        Workspace<?> workspace = launcher.getWorkspace();
-        CellLayout page = (CellLayout) workspace.getPageAt(workspace.getCurrentPage());
-        float rise = 70f * launcher.getResources().getDisplayMetrics().density;
-        if (page != null) {
-            ViewGroup items = page.getShortcutsAndWidgets();
-            for (int i = 0; i < items.getChildCount(); i++) {
-                View item = items.getChildAt(i);
-                long delay = Math.min(90, Math.max(0, item.getTop() / 8));
-                addHomeItemRevealAnimator(item, delay, rise,
-                        item.getHeight() > item.getWidth() * 1.5f ? 1.15f : 1.35f);
-            }
-        }
-
-        // The hotseat itself already fades and scales above. Moving its children upwards clips
-        // their icons against the hotseat bounds during the return-to-home gesture.
-    }
-
-    private void addHomeItemRevealAnimator(View item, long delay, float rise, float startScale) {
-        item.setAlpha(0f);
-        item.setScaleX(startScale);
-        item.setScaleY(startScale);
-        item.setTranslationY(-rise);
-
-        ObjectAnimator alpha = ObjectAnimator.ofFloat(item, View.ALPHA, 0f, 1f);
-        ObjectAnimator scaleX = ObjectAnimator.ofFloat(item, View.SCALE_X, startScale, 1f);
-        ObjectAnimator scaleY = ObjectAnimator.ofFloat(item, View.SCALE_Y, startScale, 1f);
-        ObjectAnimator translation = ObjectAnimator.ofFloat(item, View.TRANSLATION_Y, -rise, 0f);
-        for (ObjectAnimator animator : new ObjectAnimator[]{alpha, scaleX, scaleY, translation}) {
-            animator.setStartDelay(delay);
-            mAnimators.play(animator);
-        }
-        mAnimators.addListener(new AnimatorListenerAdapter() {
-            @Override
-            public void onAnimationEnd(Animator animation) {
-                item.setAlpha(1f);
-                item.setScaleX(1f);
-                item.setScaleY(1f);
-                item.setTranslationY(0f);
             }
         });
     }

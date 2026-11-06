@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Copyright (C) 2026 petalOS; SPDX-License-Identifier: Apache-2.0 -->
+<resources>
+    <string name="petal_atelier_appearance_title">petalOS Atelier</string>
+    <string name="petal_atelier_preset_title">Surface preset</string>
+    <string-array name="petal_atelier_preset_entries">
+        <item>Glass · Frosted iOS-style dock</item>
+        <item>Line · Hairline divider above the dock</item>
+        <item>Atelier · Inset matte dock</item>
+        <item>Gallery · Floating icons, no dock surface</item>
+        <item>Bloom · Rounded, softly tinted shelf</item>
+    </string-array>
+    <string-array name="petal_atelier_preset_values" translatable="false">
+        <item>glass</item>
+        <item>line</item>
+        <item>atelier</item>
+        <item>gallery</item>
+        <item>bloom</item>
+    </string-array>
+    <string name="petal_harmony_title">Wallpaper harmony</string>
+    <string name="petal_harmony_summary">Use subdued wallpaper-derived system colors for the shelf and folders</string>
+    <string name="petal_label_protection_title">Protect Home labels</string>
+    <string name="petal_label_protection_summary">Add a small contrast backing behind labels for detailed and live wallpapers</string>
+    <string name="petal_shelf_surface_title">Petal Shelf surface</string>
+    <string name="petal_shelf_surface_summary">Show a matte surface behind dock icons. Turn off for floating icons.</string>
+    <string name="petal_reduced_motion_title">Reduce icon motion</string>
+    <string name="petal_reduced_motion_summary">Disable icon press scaling and Home entrance effects. System animation settings also apply.</string>
+</resources>

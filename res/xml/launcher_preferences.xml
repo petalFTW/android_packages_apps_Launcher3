@@ -22,6 +22,38 @@
         android:key="petal_os_hub"
         android:title="@string/petal_os_hub_title"
         android:summary="@string/petal_os_hub_summary">
+        <PreferenceCategory
+            android:key="petal_atelier_appearance"
+            android:title="@string/petal_atelier_appearance_title">
+            <ListPreference
+                android:key="petal_atelier_preset"
+                android:title="@string/petal_atelier_preset_title"
+                android:dialogTitle="@string/petal_atelier_preset_title"
+                android:entries="@array/petal_atelier_preset_entries"
+                android:entryValues="@array/petal_atelier_preset_values"
+                android:defaultValue="glass"
+                launcher:useSimpleSummaryProvider="true" />
+            <SwitchPreferenceCompat
+                android:key="petal_wallpaper_harmony"
+                android:title="@string/petal_harmony_title"
+                android:summary="@string/petal_harmony_summary"
+                android:defaultValue="true" />
+            <SwitchPreferenceCompat
+                android:key="petal_label_protection"
+                android:title="@string/petal_label_protection_title"
+                android:summary="@string/petal_label_protection_summary"
+                android:defaultValue="true" />
+            <SwitchPreferenceCompat
+                android:key="petal_shelf_surface"
+                android:title="@string/petal_shelf_surface_title"
+                android:summary="@string/petal_shelf_surface_summary"
+                android:defaultValue="true" />
+        </PreferenceCategory>
+        <SwitchPreferenceCompat
+            android:key="petal_reduced_motion"
+            android:title="@string/petal_reduced_motion_title"
+            android:summary="@string/petal_reduced_motion_summary"
+            android:defaultValue="false" />
         <SwitchPreferenceCompat
             android:key="petal_unlock_animation"
             android:title="@string/petal_unlock_animation_title"

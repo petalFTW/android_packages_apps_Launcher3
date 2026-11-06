@@ -121,7 +121,7 @@ constructor(
         lifecycle.addCloseable(dumpManager.register(this))
     }
 
-    fun newModelCallbacks() = ModelLauncherCallbacks(this::enqueueModelUpdateTask)
+    fun newModelCallbacks() = ModelLauncherCallbacks(this::enqueueModelUpdateTask, context)
 
     fun getWriter(
         verifyChanges: Boolean,

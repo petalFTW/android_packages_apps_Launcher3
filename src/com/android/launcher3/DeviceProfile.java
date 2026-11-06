@@ -194,7 +194,7 @@ public class DeviceProfile {
     public DeviceProfile() {
         mWorkspaceProfile = new WorkspaceProfile(0f, 0, 0, 0, 0f, 0, 0, new Point(), 0, 0, 0, false,
                 0, 0f, 0, 0, 0, 0, 0, 0, new Rect(), new Rect(), 0, 0, 0, 0, 0, false, 0, 0, 0,
-                new Point(0, 0), 0, 0);
+                new Point(0, 0), 0, 0, 0, 0, 0);
         mDeviceProperties = new DeviceProperties(
                 0, 0,
                 0,

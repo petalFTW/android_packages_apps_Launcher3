@@ -30,6 +30,7 @@ import com.android.launcher3.dagger.ApplicationContext;
 import com.android.launcher3.dagger.LauncherAppSingleton;
 import com.android.launcher3.graphics.ThemeManager;
 import com.android.launcher3.petalos.IconPackManager;
+import com.android.launcher3.petalos.AtelierIconNormalizer;
 
 import org.xmlpull.v1.XmlPullParser;
 
@@ -78,7 +79,8 @@ public class LauncherIconProvider extends IconProvider {
                 return packIcon;
             }
         }
-        return super.getIcon(info, iconDpi);
+        return AtelierIconNormalizer.normalize(mContext.getResources(),
+                super.getIcon(info, iconDpi), iconDpi);
     }
 
     @Override
@@ -88,7 +90,8 @@ public class LauncherIconProvider extends IconProvider {
         if (packIcon != null) {
             return packIcon;
         }
-        return super.getIcon(info, iconDpi);
+        return AtelierIconNormalizer.normalize(mContext.getResources(),
+                super.getIcon(info, iconDpi), iconDpi);
     }
 
     @Override
@@ -96,6 +99,7 @@ public class LauncherIconProvider extends IconProvider {
         super.updateSystemState();
         mSystemState += "," + mThemeManager.getIconState().toUniqueId();
         mSystemState += "," + IconPackManager.get(mContext).getCacheKey();
+        mSystemState += "," + AtelierIconNormalizer.CACHE_VERSION;
     }
 
     private Map<String, ThemeData> getThemedIconMap() {

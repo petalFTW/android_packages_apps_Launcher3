@@ -358,6 +358,23 @@ public class TouchInteractionService extends Service {
         }
 
         @BinderThread
+        @Override
+        public void onShadeExpansionChanged(float fraction, boolean tracking) {
+            if (!Float.isFinite(fraction)) return;
+            // Shade expansion only drives Home content on the default display.
+            MAIN_EXECUTOR.execute(() -> executeForTouchInteractionService(tis -> {
+                if (tis.mOverviewComponentObserver == null) return;
+                BaseContainerInterface<?, ?> container = tis.mOverviewComponentObserver
+                        .getContainerInterface(DEFAULT_DISPLAY);
+                if (container == null || !(container.getCreatedContainer()
+                        instanceof com.android.launcher3.uioverrides.QuickstepLauncher launcher)) {
+                    return;
+                }
+                launcher.onPetalShadeExpansion(fraction, tracking);
+            }));
+        }
+
+        @BinderThread
         public void onActiveNavBarRegionChanges(Region region) {
             MAIN_EXECUTOR.execute(() -> executeForTouchInteractionService(
                     tis ->

@@ -27,6 +27,7 @@ import com.android.launcher3.InvariantDeviceProfile
 import com.android.launcher3.R
 import com.android.launcher3.Utilities.getIconSizeWithOverlap
 import com.android.launcher3.Utilities.getNormalizedIconDrawablePadding
+import com.android.launcher3.Utilities.calculateTextHeight
 import com.android.launcher3.deviceprofile.WorkspaceProfileNonResponsiveFactory.createWorkspaceProfileNonResponsive
 import com.android.launcher3.responsive.CalculatedCellSpec
 import com.android.launcher3.responsive.CalculatedResponsiveSpec
@@ -80,6 +81,9 @@ data class WorkspaceProfile(
     val cellSize: Point,
     val scale: Float,
     val extraSpace: Int = 0,
+    val atelierDockLiftPx: Int = 0,
+    val atelierTopExtraPx: Int = 0,
+    val atelierBottomExtraPx: Int = 0,
 ) {
 
     fun getTotalWorkspacePadding(): Point =
@@ -87,6 +91,64 @@ data class WorkspaceProfile(
             workspacePadding.left + workspacePadding.right,
             workspacePadding.top + workspacePadding.bottom,
         )
+
+    /**
+     * Portrait-phone spacing belongs to the profile so widgets, drops and previews agree. This
+     * function may run again on a profile it already adjusted, so every Atelier addition is
+     * stripped from the stored padding before the slack is recomputed.
+     */
+    private fun withAtelierSpacing(
+        res: Resources,
+        inv: InvariantDeviceProfile,
+        device: DeviceProperties,
+        isVerticalLayout: Boolean,
+    ): WorkspaceProfile {
+        if (isVerticalLayout || inv.isFixedLandscape || device.isTablet || panelCount != 1
+            || inv.numColumns <= 0 || inv.numRows <= 0) return this
+        val padding = Rect(workspacePadding)
+        padding.bottom -= atelierDockLiftPx + atelierBottomExtraPx
+        padding.top -= atelierTopExtraPx
+        val labelHeight = if (isLabelHidden) 0 else iconDrawablePaddingPx +
+            calculateTextHeight(iconTextSizePx.toFloat()) * maxIconTextLineCount
+        val minimumCellSide = iconSizePx + labelHeight
+        val baseCellHeight = max(cellSize.y, minimumCellSide)
+        val horizontalSlack = max(0, device.availableWidthPx - padding.left - padding.right -
+            cellLayoutPaddingPx.left - cellLayoutPaddingPx.right -
+            cellLayoutBorderSpacePx.x * (inv.numColumns - 1) - minimumCellSide * inv.numColumns)
+        val desiredSide = res.getDimensionPixelSize(R.dimen.petal_workspace_side_inset)
+        padding.left += min(max(0, desiredSide - padding.left), horizontalSlack / 2)
+        padding.right += min(max(0, desiredSide - padding.right), horizontalSlack / 2)
+
+        var verticalSlack = max(0, device.availableHeightPx - padding.top - padding.bottom -
+            cellLayoutPaddingPx.top - cellLayoutPaddingPx.bottom -
+            cellLayoutBorderSpacePx.y * (inv.numRows - 1) - baseCellHeight * inv.numRows)
+        val dockLift = min(res.getDimensionPixelSize(R.dimen.petal_shelf_navigation_clearance),
+            verticalSlack)
+        padding.bottom += dockLift
+        verticalSlack -= dockLift
+        val top = min(res.getDimensionPixelSize(R.dimen.petal_workspace_vertical_inset),
+            verticalSlack / 2)
+        val bottom = min(res.getDimensionPixelSize(R.dimen.petal_workspace_vertical_inset),
+            verticalSlack - top)
+        padding.top += top
+        padding.bottom += bottom
+        val size = calculateCellSize(cellLayoutBorderSpacePx, panelCount, device,
+            inv.numColumns, inv.numRows, cellLayoutPaddingPx,
+            Point(padding.left + padding.right, padding.top + padding.bottom))
+        return copy(workspacePadding = padding, cellSize = size, cellWidthPx = size.x,
+            cellHeightPx = size.y,
+            cellLayoutWidthSpecification = size.x * inv.numColumns +
+                cellLayoutBorderSpacePx.x * (inv.numColumns - 1) +
+                cellLayoutPaddingPx.left + cellLayoutPaddingPx.right,
+            cellLayoutHeightSpecification = size.y * inv.numRows +
+                cellLayoutBorderSpacePx.y * (inv.numRows - 1) +
+                cellLayoutPaddingPx.top + cellLayoutPaddingPx.bottom,
+            cellYPaddingPx = if (cellYPaddingPx < 0) cellYPaddingPx else
+                max(0, cellYPaddingPx + (size.y - cellSize.y) / 2),
+            atelierDockLiftPx = dockLift,
+            atelierTopExtraPx = top,
+            atelierBottomExtraPx = bottom)
+    }
 
     // TODO(b/432070502)
     @Deprecated(
@@ -180,7 +242,11 @@ data class WorkspaceProfile(
             workspacePadding = workspacePadding,
             cellLayoutPaddingPx = cellLayoutPaddingPx,
             cellSize = cellSize,
-        )
+            // The padding above is rebuilt from scratch, so it carries no Atelier additions.
+            atelierDockLiftPx = 0,
+            atelierTopExtraPx = 0,
+            atelierBottomExtraPx = 0,
+        ).withAtelierSpacing(res, inv, deviceProperties, isVerticalLayout)
     }
 
     // TODO(b/430382569)
@@ -566,7 +632,7 @@ data class WorkspaceProfile(
             val iconScale = min(1f, scale)
             val cellScaleToFit = scale
             // Workspace
-            return when {
+            val profile = when {
                 (isResponsiveGrid &&
                     mResponsiveWorkspaceWidthSpec != null &&
                     mResponsiveWorkspaceHeightSpec != null &&
@@ -614,6 +680,7 @@ data class WorkspaceProfile(
                         hotseatBarSizePx = hotseatBarSizePx,
                     )
             }
+            return profile.withAtelierSpacing(res, inv, deviceProperties, isVerticalLayout)
         }
     }
 }

@@ -195,6 +195,20 @@ class SubjectIconService : Service() {
             private set
         @Volatile private var activeToken: AtomicBoolean? = null
 
+        private val debounce = Runnable { pending?.let { command(it, "generate") }; pending = null }
+        private var pending: Context? = null
+
+        // waits a few secs so a burst of installs is one run. old icons get reused so it's cheap
+        @JvmStatic fun onPackageInstalled(context: Context) {
+            val main = Handler(Looper.getMainLooper())
+            main.post {
+                if (!SubjectIconStore.isEnabled(context)) return@post
+                pending = context.applicationContext
+                main.removeCallbacks(debounce)
+                main.postDelayed(debounce, 8000L)
+            }
+        }
+
         @JvmStatic fun cancelGeneration(context: Context) {
             activeToken?.set(true)
             if (isRunning) SubjectIconStore.prefs(context).edit().putString("state", "cancelled").apply()

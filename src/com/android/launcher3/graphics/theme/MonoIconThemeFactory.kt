@@ -45,7 +45,9 @@ object MonoIconThemeFactory : IconThemeFactory {
     const val MONO_FACTORY_ID = "mono-icons"
 
     // Use a constant to allow equality check in verifyIconState
-    val MONO_THEME_CONTROLLER = MonoIconThemeController(shouldForceThemeIcon = true)
+    // Keep original artwork when an app has no genuine monochrome layer. Synthesizing a logo
+    // from arbitrary coloured artwork loses detail and produces inconsistent optical weight.
+    val MONO_THEME_CONTROLLER = MonoIconThemeController(shouldForceThemeIcon = false)
 
     override fun logThemeEvent(themeId: String, logger: StatsLogger) {
         logger.log(LAUNCHER_THEMED_ICON_ENABLED)

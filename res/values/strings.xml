@@ -584,7 +584,7 @@
     <string name="petal_unlock_animation_title">Unlock entrance</string>
     <string name="petal_unlock_animation_summary">Bring Home content in as the lock screen opens</string>
     <string name="petal_home_animation_title">Return to Home</string>
-    <string name="petal_home_animation_summary">Animate Home content when leaving apps or recents</string>
+    <string name="petal_home_animation_summary">Quick, staggered icon entrance when returning Home or closing Quick Settings</string>
     <string name="petal_drawer_animation_title">App drawer entrance</string>
     <string name="petal_drawer_animation_summary">Ease drawer icons in with the panel</string>
     <string name="petal_dock_title">Dock</string>

@@ -1238,7 +1238,8 @@ public class Launcher extends StatefulActivity<LauncherState>
         Rect padding = new Rect(dp.mWorkspaceProfile.getWorkspacePadding());
         if (!show) {
             // no dock means no dead strip where it used to be
-            padding.bottom = Math.max(0, padding.bottom - dp.hotseatBarSizePx);
+            padding.bottom = Math.max(0, padding.bottom - dp.hotseatBarSizePx
+                    - dp.getWorkspaceIconProfile().getAtelierDockLiftPx());
         }
         mWorkspace.setPadding(padding.left, padding.top, padding.right, padding.bottom);
     }
@@ -1310,6 +1311,12 @@ public class Launcher extends StatefulActivity<LauncherState>
         mStartupLatencyLogger.logEnd(LAUNCHER_LATENCY_STARTUP_VIEW_INFLATION);
 
         mDragLayer = findViewById(R.id.drag_layer);
+        // Bottom-most child: depth clock and subject sit between the wallpaper and the icons.
+        InsettableFrameLayout.LayoutParams depthParams = new InsettableFrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT);
+        depthParams.ignoreInsets = true;
+        mDragLayer.addView(new com.android.launcher3.petalos.DepthHomeLayer(this), 0,
+                depthParams);
         mFocusHandler = mDragLayer.getFocusIndicatorHelper();
         mWorkspace = mDragLayer.findViewById(R.id.workspace);
         mWorkspace.initParentViews(mDragLayer);

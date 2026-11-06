@@ -25,11 +25,8 @@ import android.animation.AnimatorSet;
 import android.animation.ObjectAnimator;
 import android.animation.ValueAnimator;
 import android.content.Context;
-import android.content.res.Configuration;
 import android.graphics.Canvas;
 import android.graphics.Rect;
-import android.graphics.drawable.GradientDrawable;
-import com.android.internal.graphics.drawable.BackgroundBlurDrawable;
 import android.util.AttributeSet;
 import android.view.Gravity;
 import android.view.LayoutInflater;
@@ -45,6 +42,8 @@ import androidx.annotation.Nullable;
 import com.android.launcher3.ShortcutAndWidgetContainer.TranslationProvider;
 import com.android.launcher3.celllayout.CellLayoutLayoutParams;
 import com.android.launcher3.model.data.ItemInfo;
+import com.android.launcher3.petalos.AtelierSurface;
+import com.android.launcher3.petalos.GlassDock;
 import com.android.launcher3.util.HorizontalInsettableView;
 import com.android.launcher3.util.LauncherBindableItemsContainer.ItemOperator;
 import com.android.launcher3.util.MultiPropertyFactory;
@@ -99,11 +98,18 @@ public class Hotseat extends CellLayout implements Insettable {
 
     private final View mQsb;
 
-    // Soft glass follows the actual hotseat grid, including empty slots.
-    private final GradientDrawable mPetalDock = new GradientDrawable();
+    // Petal Shelf follows the actual hotseat grid, including empty slots.
+    // Glass preset gets the frosted dock; the others keep their Atelier material.
+    private final GlassDock mGlassDock;
+    private final AtelierSurface mAtelierDock;
+    private boolean mGlassStyle = true;
+    private boolean mLineStyle;
+    private final android.graphics.Paint mLinePaint =
+            new android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG);
+    private float mLineShaderLeft = Float.NaN;
+    private float mLineShaderRight;
     private final Rect mPetalDockRect = new Rect();
     private final Rect mPetalDockIconRect = new Rect();
-    private BackgroundBlurDrawable mPetalDockBlur;
     private boolean mPetalDockEnabled = true;
 
     public Hotseat(Context context) {
@@ -137,56 +143,23 @@ public class Hotseat extends CellLayout implements Insettable {
         mQsbAlphaChannels = new MultiValueAlpha(mQsb, ALPHA_CHANNEL_CHANNELS_COUNT);
         mQsbAlphaChannels.setUpdateVisibility(true);
 
-        mPetalDock.setShape(GradientDrawable.RECTANGLE);
-        mPetalDock.setCornerRadius(getResources().getDimension(R.dimen.petal_dock_radius));
-        mPetalDock.setColor(getPetalDockTint());
-        mPetalDock.setStroke(
-                getResources().getDimensionPixelSize(R.dimen.petal_dock_stroke),
-                getContext().getColor(R.color.petal_dock_rim));
+        mGlassDock = new GlassDock(this);
+        mAtelierDock = new AtelierSurface(this, false);
+        String preset = PetalLauncherPrefs.preset(context);
+        mGlassStyle = PetalLauncherPrefs.PRESET_GLASS.equals(preset);
+        mLineStyle = PetalLauncherPrefs.PRESET_LINE.equals(preset);
         mPetalDockEnabled = PetalLauncherPrefs.enabled(context, PetalLauncherPrefs.DOCK_ENABLED);
-    }
-
-    @Override
-    protected void onAttachedToWindow() {
-        super.onAttachedToWindow();
-        if (getViewRootImpl() != null) {
-            mPetalDockBlur = getViewRootImpl().createBackgroundBlurDrawable();
-            mPetalDockBlur.setBlurRadius(getResources().getDimensionPixelSize(
-                    R.dimen.petal_dock_blur_radius));
-            mPetalDockBlur.setCornerRadius(getResources().getDimension(R.dimen.petal_dock_radius));
-            mPetalDockBlur.setColor(getPetalDockTint());
-            mPetalDockBlur.setVisible(mPetalDockEnabled, false);
-        }
-    }
-
-    private int getPetalDockTint() {
-        int accent = getContext().getColor(android.R.color.system_accent1_500);
-        return (accent & 0x00FFFFFF) | 0x24000000;
-    }
-
-    @Override
-    protected void onConfigurationChanged(Configuration configuration) {
-        super.onConfigurationChanged(configuration);
-        int tint = getPetalDockTint();
-        mPetalDock.setColor(tint);
-        mPetalDock.setStroke(getResources().getDimensionPixelSize(R.dimen.petal_dock_stroke),
-                getContext().getColor(R.color.petal_dock_rim));
-        if (mPetalDockBlur != null) mPetalDockBlur.setColor(tint);
-        invalidate();
-    }
-
-    @Override
-    protected void onDetachedFromWindow() {
-        if (mPetalDockBlur != null) mPetalDockBlur.setVisible(false, false);
-        mPetalDockBlur = null;
-        super.onDetachedFromWindow();
     }
 
     /** petalOS: the Home setting just flips this, we draw the plate in dispatchDraw. */
     public void setPetalDockVisible(boolean enabled) {
-        if (mPetalDockEnabled != enabled) {
+        String preset = PetalLauncherPrefs.preset(getContext());
+        boolean glass = PetalLauncherPrefs.PRESET_GLASS.equals(preset);
+        boolean line = PetalLauncherPrefs.PRESET_LINE.equals(preset);
+        if (mPetalDockEnabled != enabled || mGlassStyle != glass || mLineStyle != line) {
             mPetalDockEnabled = enabled;
-            if (mPetalDockBlur != null) mPetalDockBlur.setVisible(enabled, false);
+            mGlassStyle = glass;
+            mLineStyle = line;
             invalidate();
         }
     }
@@ -206,6 +179,16 @@ public class Hotseat extends CellLayout implements Insettable {
         int padH = getResources().getDimensionPixelSize(R.dimen.petal_dock_pad_h);
         int padV = getResources().getDimensionPixelSize(R.dimen.petal_dock_pad_v);
         mPetalDockRect.inset(-padH, -padV);
+        int edge = getResources().getDimensionPixelSize(R.dimen.petal_shelf_screen_inset);
+        if (mGlassStyle) {
+            // iOS-style: one strip spanning the screen with an even margin, whatever the count.
+            mPetalDockRect.left = edge;
+            mPetalDockRect.right = getWidth() - edge;
+        } else {
+            // Atelier/Bloom keep the item centers and only clamp to the screen margin.
+            mPetalDockRect.left = Math.max(edge, mPetalDockRect.left);
+            mPetalDockRect.right = Math.min(getWidth() - edge, mPetalDockRect.right);
+        }
         ShortcutAndWidgetContainer icons = getShortcutsAndWidgets();
         if (icons.getChildCount() > 0) {
             float centerY = 0;
@@ -239,13 +222,40 @@ public class Hotseat extends CellLayout implements Insettable {
         if (mPetalDockRect.bottom > getHeight()) {
             mPetalDockRect.offset(0, getHeight() - mPetalDockRect.bottom);
         }
-        mPetalDockRect.intersect(0, 0, getWidth(), getHeight());
-        if (mPetalDockBlur != null) {
-            mPetalDockBlur.setBounds(mPetalDockRect);
-            mPetalDockBlur.draw(canvas);
+        if (!mPetalDockRect.intersect(0, 0, getWidth(), getHeight())) return;
+        if (mLineStyle) {
+            drawDockLine(canvas);
+        } else if (mGlassStyle) {
+            mGlassDock.draw(canvas, mPetalDockRect.left, mPetalDockRect.top,
+                    mPetalDockRect.right, mPetalDockRect.bottom,
+                    getResources().getDimension(R.dimen.petal_dock_radius));
+        } else {
+            mAtelierDock.draw(canvas, mPetalDockRect.left, mPetalDockRect.top,
+                    mPetalDockRect.width(), mPetalDockRect.height(),
+                    mAtelierDock.getShelfRadius(mPetalDockRect.height()), 255);
         }
-        mPetalDock.setBounds(mPetalDockRect);
-        mPetalDock.draw(canvas);
+    }
+
+    // Line preset: a hairline over the dock icons, fading out at both ends.
+    private void drawDockLine(Canvas canvas) {
+        float density = getResources().getDisplayMetrics().density;
+        float left = getResources().getDimensionPixelSize(R.dimen.petal_workspace_side_inset);
+        float right = getWidth() - left;
+        if (right <= left) return;
+        if (mLineShaderLeft != left || mLineShaderRight != right) {
+            mLineShaderLeft = left;
+            mLineShaderRight = right;
+            boolean dark = (getResources().getConfiguration().uiMode
+                    & android.content.res.Configuration.UI_MODE_NIGHT_MASK)
+                    == android.content.res.Configuration.UI_MODE_NIGHT_YES;
+            int ink = dark ? 0x66FFFFFF : 0x40000000;
+            mLinePaint.setShader(new android.graphics.LinearGradient(left, 0, right, 0,
+                    new int[] {ink & 0x00FFFFFF, ink, ink, ink & 0x00FFFFFF},
+                    new float[] {0f, .2f, .8f, 1f}, android.graphics.Shader.TileMode.CLAMP));
+            mLinePaint.setStrokeWidth(Math.max(1f, density * .75f));
+        }
+        float y = mPetalDockRect.top;
+        canvas.drawLine(left, y, right, y, mLinePaint);
     }
 
     /** Provides translation X for hotseat icons for the channel. */
@@ -380,6 +390,7 @@ public class Hotseat extends CellLayout implements Insettable {
     public void setInsets(Rect insets) {
         FrameLayout.LayoutParams lp = (FrameLayout.LayoutParams) getLayoutParams();
         DeviceProfile grid = mActivity.getDeviceProfile();
+        lp.bottomMargin = grid.getWorkspaceIconProfile().getAtelierDockLiftPx();
 
         if (grid.isVerticalBarLayout()) {
             mQsb.setVisibility(View.GONE);
@@ -398,7 +409,16 @@ public class Hotseat extends CellLayout implements Insettable {
             lp.height = grid.hotseatBarSizePx;
         }
 
-        Rect padding = grid.getHotseatLayoutPadding(getContext());
+        Rect padding = new Rect(grid.getHotseatLayoutPadding(getContext()));
+        if (!grid.isVerticalBarLayout()) {
+            // The grid leaves spare space below this row for navigation. Use some of that space
+            // to center full-size icons inside a comfortably padded shelf, rather than clipping
+            // the plate at the Hotseat's top edge or shrinking the artwork to make it fit.
+            int shelfPadding = getResources().getDimensionPixelSize(R.dimen.petal_dock_pad_v);
+            int shift = Math.min(shelfPadding, padding.bottom);
+            padding.top += shift;
+            padding.bottom -= shift;
+        }
         setPadding(padding.left, padding.top, padding.right, padding.bottom);
         setLayoutParams(lp);
         InsettableFrameLayout.dispatchInsets(this, insets);

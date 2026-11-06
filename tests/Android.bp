@@ -18,6 +18,23 @@ package {
     default_team: "trendy_team_launcher",
 }
 
+// Isolated cache-time graphics tests; no launcher database, Quickstep or device is required.
+android_app {
+    name: "PetalAtelierTestApp",
+    platform_apis: true,
+    manifest: "atelier/AndroidManifest.xml",
+    srcs: [":petal-atelier-icons-src"],
+    static_libs: ["androidx.test.ext.junit", "libmonet"],
+}
+
+android_robolectric_test {
+    enabled: true,
+    name: "PetalAtelierRoboTests",
+    srcs: ["atelier/*Test.java"],
+    instrumentation_for: "PetalAtelierTestApp",
+    strict_mode: false,
+}
+
 // Source code used for test
 filegroup {
     name: "launcher-tests-src",

@@ -14,14 +14,15 @@ import android.graphics.PorterDuff
 import android.graphics.PorterDuffColorFilter
 import android.graphics.Rect
 import android.graphics.RectF
-import android.graphics.RenderNode
 import android.graphics.Shader
 import android.graphics.drawable.AdaptiveIconDrawable
-import android.util.Log
 import androidx.core.graphics.ColorUtils
 import com.android.launcher3.icons.BaseIconFactory
 import com.android.launcher3.icons.BitmapInfo
 import com.android.launcher3.icons.FastBitmapDrawableDelegate
+import com.android.launcher3.icons.FastBitmapDrawable
+import com.android.launcher3.graphics.ThemeManager
+import com.android.launcher3.graphics.ShapeDelegate
 import com.android.launcher3.icons.GraphicsUtils.resizeToContentSize
 import com.android.launcher3.icons.IconShape
 import com.android.launcher3.icons.IconThemeController
@@ -30,8 +31,8 @@ import com.android.launcher3.icons.ThemedBitmap
 import com.android.launcher3.logging.StatsLogManager.StatsLogger
 import com.android.launcher3.petalos.SubjectIconStore
 import com.android.launcher3.petalos.SubjectIconStyle
+import com.android.launcher3.util.WallpaperColorHints
 import java.io.ByteArrayOutputStream
-import kotlin.math.max
 
 class SubjectIconThemeFactory(private val context: Context) : IconThemeFactory {
     override fun createController(themeId: String): IconThemeController = Controller(context, themeId)
@@ -90,16 +91,20 @@ class SubjectIconThemeFactory(private val context: Context) : IconThemeFactory {
         private val style: SubjectIconStyle,
         private val monochrome: Boolean,
     ) : ThemedBitmap {
+        private val shadow by lazy { SubjectIconShadow.create(bitmap) }
         override fun serialize(): ByteArray = ByteArrayOutputStream().use { stream ->
             stream.write(HEADER)
             check(bitmap.compress(Bitmap.CompressFormat.PNG, 100, stream))
             stream.toByteArray()
         }
 
-        override fun newDelegateFactory(info: BitmapInfo, context: Context) =
-            FastBitmapDrawableDelegate.DelegateFactory { _, _, _, _ ->
-                SubjectIconDelegate(bitmap, style, monochrome, info, context)
+        override fun newDelegateFactory(info: BitmapInfo, context: Context):
+            FastBitmapDrawableDelegate.DelegateFactory {
+            val subjectShadow = shadow
+            return FastBitmapDrawableDelegate.DelegateFactory { _, _, _, host ->
+                SubjectIconDelegate(bitmap, style, monochrome, info, context, host, subjectShadow)
             }
+        }
     }
 
     private class SubjectIconDelegate(
@@ -108,26 +113,41 @@ class SubjectIconThemeFactory(private val context: Context) : IconThemeFactory {
         private val monochrome: Boolean,
         private val info: BitmapInfo,
         private val context: Context,
+        private val host: FastBitmapDrawable,
+        private val shadow: SubjectIconShadow,
     ) : FastBitmapDrawableDelegate {
-        private val textureSize = max(subject.width, info.icon.width).coerceIn(128, 512)
         private val tilePaint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
         private val subjectPaint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
+        private val shadowPaint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
+        private val shadowBounds = RectF()
         private val compositePaint = Paint()
         private val rimPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE }
         private val localBounds = Rect()
         private val layerBounds = RectF()
         private var gradientsSize = -1
         private var matte: Shader? = null
+        private var wallpaperSurface: Shader? = null
+        private var wallpaperColor = 0
         private var glossy: Shader? = null
         private var gloss: Shader? = null
         private var sheenRim: Shader? = null
-        private var rimLight: Shader? = null
-        private var lensPath: Path? = null
-        private var lens: SubjectIconLens? = null
-        private var lensNode: RenderNode? = null
-        private var hardwareFailed = false
-        private var tile: Bitmap? = null
+        private var glassTint: Shader? = null
+        private var glassTintAlpha = -1
+        private var glassRim: Shader? = null
+        private var seeThroughTile: Shader? = null
+        private val punchPaint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG).apply {
+            xfermode = android.graphics.PorterDuffXfermode(PorterDuff.Mode.DST_OUT)
+        }
+        private val backdrop = if (style == SubjectIconStyle.REFRACTION) SubjectIconBackdrop(host) else null
         private var monochromeColor: Int? = null
+
+        override fun onVisibilityChanged(isVisible: Boolean) {
+            if (!isVisible) backdrop?.release()
+        }
+
+        // Both styles let the wallpaper through, so an outline shadow would show under them.
+        fun isBackdropOnly() =
+            style == SubjectIconStyle.REFRACTION || style == SubjectIconStyle.SEE_THROUGH
 
         override fun drawContent(
             info: BitmapInfo,
@@ -136,7 +156,9 @@ class SubjectIconThemeFactory(private val context: Context) : IconThemeFactory {
             bounds: Rect,
             paint: Paint,
         ) {
-            canvas.drawBitmap(iconShape.shadowLayer, null, bounds, paint)
+            if (!isBackdropOnly()) {
+                canvas.drawBitmap(iconShape.shadowLayer, null, bounds, paint)
+            }
             val size = iconShape.pathSize
             if (size <= 0) return
             canvas.resizeToContentSize(bounds, size.toFloat()) {
@@ -145,7 +167,9 @@ class SubjectIconThemeFactory(private val context: Context) : IconThemeFactory {
                 layerBounds.set(0f, 0f, size.toFloat(), size.toFloat())
                 compositePaint.alpha = paint.alpha
                 compositePaint.colorFilter = paint.colorFilter
-                val layer = if (paint.alpha != 255 || paint.colorFilter != null) {
+                // The punch-out clears its own layer only, never the window behind the icon.
+                val layer = if (paint.alpha != 255 || paint.colorFilter != null
+                    || style == SubjectIconStyle.SEE_THROUGH) {
                     saveLayer(layerBounds, compositePaint)
                 } else save()
                 try {
@@ -153,7 +177,20 @@ class SubjectIconThemeFactory(private val context: Context) : IconThemeFactory {
                     when (style) {
                         SubjectIconStyle.FROSTED -> drawSurface(iconShape.path, matte)
                         SubjectIconStyle.SHEEN -> drawSurface(iconShape.path, glossy)
-                        SubjectIconStyle.REFRACTION -> drawRefraction(iconShape)
+                        SubjectIconStyle.REFRACTION -> {
+                            val shape = ThemeManager.INSTANCE[context].iconShape
+                            val corner = if (shape is ShapeDelegate.RoundedSquare) {
+                                size / 2f * shape.radiusRatio
+                            } else size * .22f
+                            backdrop?.draw(this, size, corner,
+                                paint.alpha == 255 && paint.colorFilter == null)
+                            drawGlassTint(iconShape.path, size, backdrop?.isShowing() == true)
+                        }
+                        SubjectIconStyle.SEE_THROUGH -> {
+                            drawSurface(iconShape.path, seeThroughTile)
+                            drawBitmap(subject, null, localBounds, punchPaint)
+                        }
+                        SubjectIconStyle.WALLPAPER -> drawSurface(iconShape.path, wallpaperSurface)
                         SubjectIconStyle.SOLID -> {
                             // The launcher already picked the strongest hue from the original icon.
                             tilePaint.shader = null
@@ -164,13 +201,19 @@ class SubjectIconThemeFactory(private val context: Context) : IconThemeFactory {
                     if (monochrome) {
                         val night = context.resources.configuration.uiMode and
                             Configuration.UI_MODE_NIGHT_MASK == Configuration.UI_MODE_NIGHT_YES
-                        val color = if (night) Color.BLACK else Color.WHITE
+                        val color = if (style == SubjectIconStyle.WALLPAPER) {
+                            context.getColor(if (night) android.R.color.system_neutral1_50
+                                else android.R.color.system_neutral1_900)
+                        } else if (night) Color.BLACK else Color.WHITE
                         if (monochromeColor != color) {
                             subjectPaint.colorFilter = PorterDuffColorFilter(color, PorterDuff.Mode.SRC_IN)
                             monochromeColor = color
                         }
                     }
-                    drawBitmap(subject, null, localBounds, subjectPaint)
+                    if (style != SubjectIconStyle.SEE_THROUGH) {
+                        shadow.draw(this, size, shadowBounds, shadowPaint)
+                        drawBitmap(subject, null, localBounds, subjectPaint)
+                    }
                     if (style == SubjectIconStyle.SHEEN) {
                         // Gloss sits over the cutout too; hiding it underneath made both modes identical.
                         drawSurface(iconShape.path, gloss)
@@ -180,10 +223,19 @@ class SubjectIconThemeFactory(private val context: Context) : IconThemeFactory {
                     rimPaint.shader = when (style) {
                         SubjectIconStyle.FROSTED -> null
                         SubjectIconStyle.SHEEN -> sheenRim
-                        SubjectIconStyle.REFRACTION -> rimLight
+                        SubjectIconStyle.REFRACTION -> null
+                        SubjectIconStyle.WALLPAPER -> null
                         SubjectIconStyle.SOLID -> null
+                        SubjectIconStyle.SEE_THROUGH -> null
                     }
-                    if (style != SubjectIconStyle.SOLID) drawPath(iconShape.path, rimPaint)
+                    if (style == SubjectIconStyle.REFRACTION) {
+                        rimPaint.color = Color.WHITE
+                        rimPaint.shader = glassRim
+                    }
+                    if (style == SubjectIconStyle.FROSTED || style == SubjectIconStyle.SHEEN
+                        || style == SubjectIconStyle.REFRACTION) {
+                        drawPath(iconShape.path, rimPaint)
+                    }
                 } finally {
                     restoreToCount(layer)
                 }
@@ -191,8 +243,18 @@ class SubjectIconThemeFactory(private val context: Context) : IconThemeFactory {
         }
 
         private fun prepareGradients(size: Int) {
-            if (gradientsSize == size) return
+            val night = context.resources.configuration.uiMode and
+                Configuration.UI_MODE_NIGHT_MASK == Configuration.UI_MODE_NIGHT_YES
+            val wallpaperTone = if (style == SubjectIconStyle.WALLPAPER) {
+                val palette = WallpaperColorHints.get(context).paletteFor(host)
+                if (night) palette.darkSurface else palette.lightSurface
+            } else 0
+            if (gradientsSize == size && wallpaperColor == wallpaperTone) return
+            wallpaperColor = wallpaperTone
             val extent = size.toFloat()
+            wallpaperSurface = LinearGradient(0f, 0f, 0f, extent,
+                ColorUtils.blendARGB(wallpaperTone, Color.WHITE, if (night) .035f else .10f),
+                wallpaperTone, Shader.TileMode.CLAMP)
             // Just a little milk in the glass, not a grey paint job.
             val neutral = ColorUtils.blendARGB(info.color, 0xFFBFC5CA.toInt(), .18f)
             matte = LinearGradient(0f, 0f, 0f, extent,
@@ -208,10 +270,32 @@ class SubjectIconThemeFactory(private val context: Context) : IconThemeFactory {
             sheenRim = LinearGradient(0f, 0f, extent, extent,
                 intArrayOf(0x55FFFFFF, 0x0CFFFFFF, 0x28FFFFFF),
                 floatArrayOf(0f, .55f, 1f), Shader.TileMode.CLAMP)
-            rimLight = LinearGradient(0f, 0f, extent, extent,
-                intArrayOf(0xBBFFFFFF.toInt(), 0x20FFFFFF, 0x70FFFFFF),
-                floatArrayOf(0f, .55f, 1f), Shader.TileMode.CLAMP)
+            // Island-style rim: lit along the top, fading out before the bottom edge.
+            glassRim = LinearGradient(0f, 0f, 0f, extent,
+                intArrayOf(0x66FFFFFF, 0x10FFFFFF, 0x22FFFFFF),
+                floatArrayOf(0f, .6f, 1f), Shader.TileMode.CLAMP)
+            seeThroughTile = LinearGradient(0f, 0f, 0f, extent,
+                ColorUtils.blendARGB(info.color, Color.WHITE, .08f),
+                ColorUtils.blendARGB(info.color, Color.BLACK, .10f), Shader.TileMode.CLAMP)
+            glassTintAlpha = -1
             gradientsSize = size
+        }
+
+        // The app's own background over the refracted wallpaper, as the island tints its blob.
+        // Without a live blur behind it the tint goes opaque so the tile never reads as empty.
+        private fun Canvas.drawGlassTint(path: Path, size: Int, overBlur: Boolean) {
+            val alpha = if (overBlur) GLASS_TINT_ALPHA else 0xFF
+            if (glassTintAlpha != alpha) {
+                val base = info.color or (0xff shl 24)
+                val top = ColorUtils.setAlphaComponent(
+                    ColorUtils.blendARGB(base, Color.WHITE, .12f), alpha)
+                val bottom = ColorUtils.setAlphaComponent(
+                    ColorUtils.blendARGB(base, Color.BLACK, .08f), alpha)
+                glassTint = LinearGradient(0f, 0f, 0f, size.toFloat(), top, bottom,
+                    Shader.TileMode.CLAMP)
+                glassTintAlpha = alpha
+            }
+            drawSurface(path, glassTint)
         }
 
         private fun Canvas.drawSurface(path: Path, shader: Shader?) {
@@ -221,57 +305,18 @@ class SubjectIconThemeFactory(private val context: Context) : IconThemeFactory {
             tilePaint.shader = null
         }
 
-        private fun Canvas.drawRefraction(shape: IconShape) {
-            if (lensPath !== shape.path) {
-                lensNode?.discardDisplayList()
-                lensNode = null
-                tile = null
-                lensPath = shape.path
-                lens = SubjectIconLens.forShape(shape, textureSize)
-            }
-            val geometry = checkNotNull(lens)
-            val effect = if (isHardwareAccelerated && !hardwareFailed) geometry.effect else null
-            if (effect != null) {
-                try {
-                    val node = lensNode ?: RenderNode("SubjectIconLens").also { fresh ->
-                        fresh.setPosition(0, 0, textureSize, textureSize)
-                        val recording = fresh.beginRecording(textureSize, textureSize)
-                        try {
-                            tilePaint.shader = null
-                            tilePaint.alpha = 255
-                            recording.drawColor(info.color or (0xff shl 24))
-                            recording.drawBitmap(info.icon, null,
-                                Rect(0, 0, textureSize, textureSize), tilePaint)
-                        } finally {
-                            fresh.endRecording()
-                        }
-                        fresh.setRenderEffect(effect)
-                        lensNode = fresh
-                    }
-                    val saved = save()
-                    try {
-                        val factor = shape.pathSize.toFloat() / textureSize
-                        scale(factor, factor)
-                        drawRenderNode(node)
-                    } finally {
-                        restoreToCount(saved)
-                    }
-                    return
-                } catch (error: RuntimeException) {
-                    Log.w("CutoutIcons", "Lens rendering failed; using bitmap fallback", error)
-                    hardwareFailed = true
-                    lensNode?.discardDisplayList()
-                    lensNode = null
-                }
-            }
-            val bitmap = tile ?: geometry.bitmap(info.icon, info.color).also { tile = it }
-            tilePaint.shader = null
-            tilePaint.alpha = 255
-            drawBitmap(bitmap, null, localBounds, tilePaint)
-        }
     }
 
     companion object {
+        // Enough of the app colour to read as its tile while the refraction still shows.
+        private const val GLASS_TINT_ALPHA = 0xA6
+
+        @JvmStatic
+        fun hasTransparentBackdrop(icon: FastBitmapDrawable): Boolean {
+            val delegate = icon.delegate
+            return delegate is SubjectIconDelegate && delegate.isBackdropOnly()
+        }
+
         private val HEADER = ("PSI3:" + SubjectIconStore.MODEL_SHA256 + "\n")
             .toByteArray(Charsets.US_ASCII)
     }

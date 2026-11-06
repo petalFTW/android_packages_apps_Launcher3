@@ -21,6 +21,7 @@ import android.app.WallpaperManager
 import android.app.WallpaperManager.FLAG_SYSTEM
 import android.app.WallpaperManager.OnColorsChangedListener
 import android.content.Context
+import android.graphics.drawable.Drawable
 import androidx.annotation.MainThread
 import androidx.annotation.VisibleForTesting
 import com.android.launcher3.dagger.ApplicationContext
@@ -28,6 +29,8 @@ import com.android.launcher3.dagger.LauncherAppComponent
 import com.android.launcher3.dagger.LauncherAppSingleton
 import com.android.launcher3.util.Executors.MAIN_EXECUTOR
 import com.android.launcher3.util.Executors.UI_HELPER_EXECUTOR
+import com.android.launcher3.petalos.WallpaperTonalPalette
+import java.util.WeakHashMap
 import javax.inject.Inject
 
 /**
@@ -40,14 +43,23 @@ class WallpaperColorHints
 constructor(@ApplicationContext private val context: Context, tracker: DaggerSingletonTracker) {
     var hints: Int = 0
         private set
+    @Volatile var palette: WallpaperTonalPalette = WallpaperTonalPalette.from(null)
+        private set
+    @Volatile var hasWallpaperColors: Boolean = false
+        private set
 
     private val wallpaperManager
         get() = context.getSystemService(WallpaperManager::class.java)!!
 
     private val onColorHintsChangedListeners = mutableListOf<OnColorHintListener>()
+    private val onWallpaperColorsChangedListeners = mutableListOf<OnWallpaperColorsChangedListener>()
+    private val paletteDrawables = WeakHashMap<Drawable, Boolean>()
 
     init {
-        hints = wallpaperManager.getWallpaperColors(FLAG_SYSTEM)?.colorHints ?: 0
+        val colors = wallpaperManager.getWallpaperColors(FLAG_SYSTEM)
+        hints = colors?.colorHints ?: 0
+        palette = WallpaperTonalPalette.from(colors)
+        hasWallpaperColors = colors != null
         val onColorsChangedListener = OnColorsChangedListener { colors, which ->
             onColorsChanged(colors, which)
         }
@@ -67,12 +79,33 @@ constructor(@ApplicationContext private val context: Context, tracker: DaggerSin
     @MainThread
     private fun onColorsChanged(colors: WallpaperColors?, which: Int) {
         if ((which and FLAG_SYSTEM) != 0) {
+            palette = WallpaperTonalPalette.from(colors)
+            hasWallpaperColors = colors != null
             val newHints = colors?.colorHints ?: 0
             if (newHints != hints) {
                 hints = newHints
                 onColorHintsChangedListeners.forEach { it.onColorHintsChanged(newHints) }
             }
+            // A different wallpaper can have identical luminance hints. Palette consumers must
+            // still repaint, including when the system's selected Monet palette stays pinned.
+            onWallpaperColorsChangedListeners.toList().forEach { it.onWallpaperColorsChanged() }
+            val drawables = synchronized(paletteDrawables) { paletteDrawables.keys.toList() }
+            drawables.forEach { it.invalidateSelf() }
         }
+    }
+
+    fun paletteFor(drawable: Drawable): WallpaperTonalPalette {
+        // Weak keys avoid retaining recycled drawer/preview icons through the application singleton.
+        synchronized(paletteDrawables) { paletteDrawables[drawable] = true }
+        return palette
+    }
+
+    fun registerOnWallpaperColorsChangedListener(listener: OnWallpaperColorsChangedListener) {
+        onWallpaperColorsChangedListeners.add(listener)
+    }
+
+    fun unregisterOnWallpaperColorsChangedListener(listener: OnWallpaperColorsChangedListener) {
+        onWallpaperColorsChangedListeners.remove(listener)
     }
 
     fun registerOnColorHintsChangedListener(listener: OnColorHintListener) {
@@ -94,4 +127,8 @@ constructor(@ApplicationContext private val context: Context, tracker: DaggerSin
 
 interface OnColorHintListener {
     fun onColorHintsChanged(colorHints: Int)
+}
+
+interface OnWallpaperColorsChangedListener {
+    fun onWallpaperColorsChanged()
 }

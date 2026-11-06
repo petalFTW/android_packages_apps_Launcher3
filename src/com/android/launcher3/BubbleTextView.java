@@ -257,6 +257,7 @@ public class BubbleTextView extends TextView implements ItemInfoUpdateReceiver,
 
     private boolean mShouldShowLabel;
     private boolean mThemeAllAppsIcons;
+    private com.android.launcher3.petalos.AtelierLabelProtection mAtelierLabel;
 
     private CancellableTask mIconLoadRequest;
 
@@ -332,6 +333,10 @@ public class BubbleTextView extends TextView implements ItemInfoUpdateReceiver,
         mIconSize = a.getDimensionPixelSize(R.styleable.BubbleTextView_iconSizeOverride,
                 defaultIconSize);
         a.recycle();
+
+        if (mDisplay == DISPLAY_WORKSPACE) {
+            mAtelierLabel = new com.android.launcher3.petalos.AtelierLabelProtection(this);
+        }
 
         if (mDisplay == DISPLAY_WORKSPACE) {
             setOutlineProvider(new ViewOutlineProvider() {
@@ -723,6 +728,16 @@ public class BubbleTextView extends TextView implements ItemInfoUpdateReceiver,
     }
 
     @Override
+    protected void drawableStateChanged() {
+        boolean wasPressed = mIcon != null && mIcon.isPressed;
+        super.drawableStateChanged();
+        if (mIcon != null && wasPressed != mIcon.isPressed
+                && (mDisplay == DISPLAY_WORKSPACE || mDisplay == DISPLAY_FOLDER)) {
+            com.android.launcher3.petalos.AtelierMotion.onPressedChanged(getContext(), mIcon);
+        }
+    }
+
+    @Override
     protected int[] onCreateDrawableState(int extraSpace) {
         final int[] drawableState = super.onCreateDrawableState(extraSpace + 1);
         if (mStayPressed) {
@@ -777,6 +792,9 @@ public class BubbleTextView extends TextView implements ItemInfoUpdateReceiver,
         super.onVisibilityAggregated(isVisible);
         if (mIcon != null) {
             mIcon.setVisible(isVisible, false);
+            if (!isVisible && (mDisplay == DISPLAY_WORKSPACE || mDisplay == DISPLAY_FOLDER)) {
+                resetIconScale();
+            }
         }
     }
 
@@ -870,9 +888,16 @@ public class BubbleTextView extends TextView implements ItemInfoUpdateReceiver,
 
     @Override
     public void onDraw(Canvas canvas) {
+        drawAtelierLabelProtection(canvas);
         super.onDraw(canvas);
         drawDotIfNecessary(canvas);
         drawRunningAppIndicatorIfNecessary(canvas);
+    }
+
+    protected void drawAtelierLabelProtection(Canvas canvas) {
+        if (mAtelierLabel != null && shouldTextBeVisible() && !shouldDrawAppContrastTile()) {
+            mAtelierLabel.draw(canvas);
+        }
     }
 
     /**
@@ -1385,6 +1410,8 @@ public class BubbleTextView extends TextView implements ItemInfoUpdateReceiver,
     private void updateWorkspaceIconShadow() {
         if (mDisplay != DISPLAY_WORKSPACE) return;
         setElevation(mIcon != null && mIsIconVisible
+                && !com.android.launcher3.graphics.theme.SubjectIconThemeFactory
+                        .hasTransparentBackdrop(mIcon)
                 ? WORKSPACE_ICON_SHADOW_ELEVATION_DP
                         * getResources().getDisplayMetrics().density
                 : 0f);

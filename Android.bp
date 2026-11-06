@@ -417,6 +417,17 @@ java_import {
     ],
 }
 
+// Cache-time optical fitting can be tested without Quickstep or a launcher database.
+filegroup {
+    name: "petal-atelier-icons-src",
+    srcs: [
+        "src/com/android/launcher3/petalos/AtelierIconNormalizer.java",
+        "src/com/android/launcher3/petalos/WallpaperTonalPalette.java",
+        "src/com/android/launcher3/anim/PreparedHomeReveal.java",
+        "src/com/android/launcher3/anim/ShadeIconProgress.java",
+    ],
+}
+
 // Library with all the dependencies for building Launcher3
 android_library {
     name: "Launcher3ResLib",
@@ -434,6 +445,7 @@ android_library {
         "androidx.cardview_cardview",
         "androidx.window_window",
         "com.google.android.material_material",
+        "libmonet",
         "//frameworks/libs/systemui:iconloader_base",
         "//frameworks/libs/systemui:view_capture",
         "//frameworks/libs/systemui:animationlib",

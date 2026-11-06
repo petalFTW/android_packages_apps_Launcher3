@@ -111,6 +111,7 @@ public class DoubleShadowBubbleTextView extends BubbleTextView {
             super.onDraw(canvas);
             return;
         }
+        drawAtelierLabelProtection(canvas);
         int alpha = Color.alpha(getCurrentTextColor());
 
         // We enhance the shadow by drawing the shadow twice

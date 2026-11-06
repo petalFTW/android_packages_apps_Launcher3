@@ -143,6 +143,9 @@ import com.android.launcher3.allapps.AllAppsRecyclerView;
 import com.android.launcher3.anim.AnimatorPlaybackController;
 import com.android.launcher3.anim.PendingAnimation;
 import com.android.launcher3.anim.PetalHomeUnlockAnimation;
+import com.android.launcher3.anim.PetalHomeReturnAnimation;
+import com.android.launcher3.anim.PreparedHomeReveal;
+import com.android.launcher3.anim.ShadeIconProgress;
 import com.android.launcher3.apppairs.AppPairIcon;
 import com.android.launcher3.appprediction.PredictionRowView;
 import com.android.launcher3.config.FeatureFlags;
@@ -298,6 +301,11 @@ public class QuickstepLauncher extends Launcher implements RecentsViewContainer,
     private static final long UNLOCK_ROW_STAGGER_MS = 24;
     private static final long UNLOCK_ICON_STAGGER_MS = 6;
     private final PetalHomeUnlockAnimation mHomeUnlockAnimation = new PetalHomeUnlockAnimation();
+    private PreparedHomeReveal mShadeHomeReveal;
+    // The released shade closes in ~150ms; the icons finish on their own, slower clock.
+    private static final long SHADE_CLOSE_ICON_MS = 620;
+    private float mLastShadeFraction;
+    private boolean mShadeHomeSettling;
     private View mDrawerAnimatedView;
     private final ILauncherUnlockAnimationController mHomeUnlockController =
             new ILauncherUnlockAnimationController.Stub() {
@@ -779,6 +787,7 @@ public class QuickstepLauncher extends Launcher implements RecentsViewContainer,
 
     @Override
     public void onDestroy() {
+        cancelShadeHomeReveal();
         if (mPetalPopupDepthAnimator != null) {
             mPetalPopupDepthAnimator.cancel();
         }
@@ -1076,6 +1085,7 @@ public class QuickstepLauncher extends Launcher implements RecentsViewContainer,
 
     @Override
     protected void onPause() {
+        cancelShadeHomeReveal();
         if (mLauncherUnfoldAnimationController != null) {
             mLauncherUnfoldAnimationController.onPause();
         }
@@ -1130,6 +1140,68 @@ public class QuickstepLauncher extends Launcher implements RecentsViewContainer,
                 && !getSystemService(KeyguardManager.class).isKeyguardLocked()) {
             getWorkspace().post(() -> playHomeUnlockAnimation(700, 0));
         }
+    }
+
+    /**
+     * Continuous shade expansion from SystemUI, delivered per frame during the drag and the
+     * settle animation. Icons ride the finger: they stay at rest until the shade is mostly
+     * collapsed, then interpolate to the hidden frame before the shade fully covers Home.
+     */
+    public void onPetalShadeExpansion(float fraction, boolean tracking) {
+        if (!Float.isFinite(fraction)) return;
+        boolean closing = fraction < mLastShadeFraction;
+        mLastShadeFraction = fraction;
+        if (!canPlayShadeHomeReveal()) {
+            cancelShadeHomeReveal();
+            return;
+        }
+        if (mShadeHomeSettling) {
+            // Only a finger back on the shade, or the shade reopening, takes the icons back.
+            if (!tracking && closing) return;
+            mShadeHomeSettling = false;
+        } else if (!tracking && closing && mShadeHomeReveal != null) {
+            mShadeHomeSettling = true;
+            PreparedHomeReveal reveal = mShadeHomeReveal;
+            reveal.finish(SHADE_CLOSE_ICON_MS, () -> {
+                if (mShadeHomeReveal == reveal) {
+                    mShadeHomeReveal = null;
+                    mShadeHomeSettling = false;
+                }
+            });
+            return;
+        }
+        if (fraction <= 0f) {
+            // Retire the gesture owner at rest. Closed-state replays must not capture transforms
+            // belonging to a concurrent app/recents return and later restore the wrong pose.
+            cancelShadeHomeReveal();
+            return;
+        }
+        if (mShadeHomeReveal == null) {
+            mShadeHomeReveal = PetalHomeReturnAnimation.create(this);
+        }
+        mShadeHomeReveal.setProgress(ShadeIconProgress.fromExpansion(fraction));
+    }
+
+    private boolean canPlayShadeHomeReveal() {
+        return hasBeenResumed() && isInState(NORMAL) && !mPendingHomeUnlock
+                && !getDragController().isDragging()
+                && getWorkspace().getWindowToken() != null
+                && PetalHomeReturnAnimation.isEnabled(this)
+                && !getSystemService(KeyguardManager.class).isKeyguardLocked();
+    }
+
+    private void cancelShadeHomeReveal() {
+        mShadeHomeSettling = false;
+        if (mShadeHomeReveal != null) {
+            mShadeHomeReveal.cancel();
+            mShadeHomeReveal = null;
+        }
+    }
+
+    @Override
+    public boolean dispatchTouchEvent(MotionEvent event) {
+        if (event.getActionMasked() == MotionEvent.ACTION_DOWN) cancelShadeHomeReveal();
+        return super.dispatchTouchEvent(event);
     }
 
     private void prepareHomeUnlockAnimation() {
@@ -1212,6 +1284,7 @@ public class QuickstepLauncher extends Launcher implements RecentsViewContainer,
 
     @Override
     public void onStateSetStart(LauncherState state) {
+        cancelShadeHomeReveal();
         if (state != NORMAL) resetHomeUnlockAnimation();
         super.onStateSetStart(state);
         resetDrawerEntrance();

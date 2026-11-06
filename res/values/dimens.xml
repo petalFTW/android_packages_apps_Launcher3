@@ -605,7 +605,11 @@
     <dimen name="petal_drawer_corner_radius">32dp</dimen>
 
     <!-- petalOS dock panel -->
-    <dimen name="petal_dock_radius">22dp</dimen>
+    <dimen name="petal_dock_radius">32dp</dimen>
+    <dimen name="petal_shelf_screen_inset">10dp</dimen>
+    <dimen name="petal_shelf_navigation_clearance">28dp</dimen>
+    <dimen name="petal_workspace_side_inset">18dp</dimen>
+    <dimen name="petal_workspace_vertical_inset">12dp</dimen>
     <dimen name="petal_dock_blur_radius">28dp</dimen>
     <dimen name="petal_dock_stroke">1dp</dimen>
     <dimen name="petal_dock_pad_h">16dp</dimen>

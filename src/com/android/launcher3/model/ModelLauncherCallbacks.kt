@@ -41,12 +41,17 @@ import java.util.function.Consumer
  * Implementation of {@link LauncherApps#Callbacks} which converts various events to corresponding
  * model tasks
  */
-class ModelLauncherCallbacks(private var taskExecutor: Consumer<ModelUpdateTask>) :
+class ModelLauncherCallbacks(
+    private var taskExecutor: Consumer<ModelUpdateTask>,
+    private val context: android.content.Context? = null,
+) :
     LauncherApps.Callback(), InstallSessionTracker.Callback {
 
     override fun onPackageAdded(packageName: String, user: UserHandle) {
         FileLog.d(TAG, "onPackageAdded triggered for packageName=$packageName, user=$user")
         taskExecutor.accept(PackageUpdatedTask(OP_ADD, user, packageName))
+        // new app = no cutout yet, kick an incremental run
+        context?.let { com.android.launcher3.petalos.SubjectIconService.onPackageInstalled(it) }
     }
 
     override fun onPackageChanged(packageName: String, user: UserHandle) {
