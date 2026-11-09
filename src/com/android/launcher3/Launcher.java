@@ -1231,8 +1231,9 @@ public class Launcher extends StatefulActivity<LauncherState>
     private void applyPetalDock() {
         if (mHotseat == null) return;
         boolean show = PetalLauncherPrefs.enabled(this, PetalLauncherPrefs.DOCK_ENABLED);
-        mHotseat.setVisibility(show ? View.VISIBLE : View.GONE);
+        // flag first, the hotseat refuses VISIBLE while it thinks the dock's off
         mHotseat.setPetalDockVisible(show);
+        mHotseat.setVisibility(show ? View.VISIBLE : View.GONE);
         if (mWorkspace == null) return;
         DeviceProfile dp = getDeviceProfile();
         Rect padding = new Rect(dp.mWorkspaceProfile.getWorkspacePadding());

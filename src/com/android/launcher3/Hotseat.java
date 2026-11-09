@@ -162,6 +162,14 @@ public class Hotseat extends CellLayout implements Insettable {
             mLineStyle = line;
             invalidate();
         }
+        if (!enabled) super.setVisibility(GONE);
+    }
+
+    // state anims fade the dock alpha back up and that flips it VISIBLE again.
+    // drawer open = dock back from the dead. toggle off means off, ta
+    @Override
+    public void setVisibility(int visibility) {
+        super.setVisibility(mPetalDockEnabled ? visibility : GONE);
     }
 
     @Override
