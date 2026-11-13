@@ -45,7 +45,7 @@ public final class DepthHomeLayer extends View {
             PetalConfig.KEY_DEPTH_CLOCK_STYLE, PetalConfig.KEY_DEPTH_CLOCK_STACK,
             PetalConfig.KEY_DEPTH_CLOCK_COLOR, PetalConfig.KEY_DEPTH_CLOCK_DATE,
             PetalConfig.KEY_DEPTH_CLOCK_ANCHOR, PetalConfig.KEY_DEPTH_CLOCK_X,
-            PetalConfig.KEY_DEPTH_CLOCK_SCALE,
+            PetalConfig.KEY_DEPTH_CLOCK_SCALE, PetalConfig.KEY_DEPTH_CLOCK_COLON,
     };
 
     private final DepthClockRenderer mClock = new DepthClockRenderer();
@@ -71,6 +71,49 @@ public final class DepthHomeLayer extends View {
         }
     };
 
+    // sysui says unlock started: sink in step with the lock clock, then rise back. never goes see-through
+    private final BroadcastReceiver mHandoffReceiver = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            if (mEnabled && PetalConfig.areDepthClocksAligned(context)) startRise();
+        }
+    };
+    private android.animation.ValueAnimator mRiseAnim;
+    private float mRise;
+    private float mRiseAlpha = 1f;
+
+    private void startRise() {
+        if (mRiseAnim != null) mRiseAnim.cancel();
+        final float drop = PetalConfig.DEPTH_HANDOFF_DROP_DP * getResources().getDisplayMetrics().density;
+        final long sink = PetalConfig.DEPTH_HANDOFF_SINK_MS, total = sink + PetalConfig.DEPTH_HANDOFF_RISE_MS;
+        final float split = sink / (float) total;
+        final android.view.animation.Interpolator down = new android.view.animation.AccelerateInterpolator(1.5f);
+        final android.view.animation.Interpolator up = new android.view.animation.DecelerateInterpolator(2f);
+        mRise = 0f;
+        mRiseAlpha = 1f;
+        android.animation.ValueAnimator anim = android.animation.ValueAnimator.ofFloat(0f, 1f);
+        anim.setDuration(total);
+        anim.setInterpolator(new android.view.animation.LinearInterpolator());
+        anim.addUpdateListener(a -> {
+            float f = (float) a.getAnimatedValue();
+            mRise = f < split ? drop * down.getInterpolation(f / split)
+                    : drop * (1f - up.getInterpolation((f - split) / (1f - split)));
+            invalidate();
+        });
+        anim.addListener(new android.animation.AnimatorListenerAdapter() {
+            @Override
+            public void onAnimationEnd(android.animation.Animator animation) {
+                if (mRiseAnim != animation) return;
+                mRiseAnim = null;
+                mRise = 0f;
+                mRiseAlpha = 1f;
+                invalidate();
+            }
+        });
+        mRiseAnim = anim;
+        anim.start();
+    }
+
     private boolean mEnabled;
     private Bitmap mSubject;
     private int mLoadedGeneration = Integer.MIN_VALUE;
@@ -93,6 +136,12 @@ public final class DepthHomeLayer extends View {
         setFocusable(false);
         setWillNotDraw(false);
         setVisibility(GONE);
+        // lock clock + studio run rubik, without this home fell back to plain sans = wider digits, round colon
+        try {
+            org.petalos.config.DepthClockMaterials.setBaseTypeface(
+                    context.getResources().getFont(com.android.launcher3.R.font.petal_rubik));
+        } catch (Exception ignored) {
+        }
     }
 
     @Override
@@ -113,6 +162,10 @@ public final class DepthHomeLayer extends View {
         filter.addAction(Intent.ACTION_TIMEZONE_CHANGED);
         filter.addAction(Intent.ACTION_WALLPAPER_CHANGED);
         getContext().registerReceiver(mTimeReceiver, filter, Context.RECEIVER_EXPORTED);
+        // only sysui (status bar perm) gets to kick this
+        getContext().registerReceiver(mHandoffReceiver,
+                new IntentFilter(PetalConfig.ACTION_DEPTH_CLOCK_HANDOFF),
+                android.Manifest.permission.STATUS_BAR_SERVICE, null, Context.RECEIVER_EXPORTED);
         refresh();
     }
 
@@ -120,6 +173,11 @@ public final class DepthHomeLayer extends View {
     protected void onDetachedFromWindow() {
         getContext().getContentResolver().unregisterContentObserver(mSettingsObserver);
         getContext().unregisterReceiver(mTimeReceiver);
+        getContext().unregisterReceiver(mHandoffReceiver);
+        if (mRiseAnim != null) mRiseAnim.cancel();
+        mRiseAnim = null;
+        mRise = 0f;
+        mRiseAlpha = 1f;
         mLoadRequest++;
         super.onDetachedFromWindow();
     }
@@ -133,6 +191,7 @@ public final class DepthHomeLayer extends View {
         mScale = PetalConfig.getDepthClockScalePct(context, true) / 100f;
         mInk = DepthClockRenderer.inkFor(mStyle, PetalConfig.getDepthClockColor(context, true));
         mShowDate = PetalConfig.isDepthClockDateEnabled(context, true);
+        mClock.setColon(PetalConfig.isDepthClockColonEnabled(context, true));
         String uri = PetalConfig.getDepthCutoutUri(context, true);
         mEnabled = PetalConfig.isDepthHomeEnabled(context) && uri != null
                 && mStyle != DepthClockRenderer.STYLE_OFF && homeWallpaperIsStudios();
@@ -165,22 +224,32 @@ public final class DepthHomeLayer extends View {
         int request = ++mLoadRequest;
         Context context = getContext().getApplicationContext();
         UI_HELPER_EXECUTOR.execute(() -> {
-            Bitmap bitmap = null;
-            try (ParcelFileDescriptor fd = context.getContentResolver()
-                    .openFileDescriptor(Uri.parse(uri), "r")) {
-                if (fd != null) bitmap = BitmapFactory.decodeFileDescriptor(fd.getFileDescriptor());
-            } catch (Exception e) {
-                Log.w(TAG, "Could not load the depth cutout", e);
-            }
+            Bitmap bitmap = decode(context, uri);
+            // home never loaded these, so frost/liquid fell back to the flat painted gradient
+            // and looked nothing like the studio preview. same files studio saved for home
+            Bitmap frost = decode(context, "content://org.petalos.depth/home_frost.png");
+            Bitmap liquid = decode(context, "content://org.petalos.depth/home_liquid.png");
             Bitmap result = bitmap;
             MAIN_EXECUTOR.execute(() -> {
                 if (request != mLoadRequest || !mEnabled) return;
+                mClock.setBackdrop(frost);
+                mClock.setLiquidBackdrop(liquid);
                 mSubject = result;
                 mLoadedGeneration = generation;
                 setVisibility(result != null ? VISIBLE : GONE);
                 invalidate();
             });
         });
+    }
+
+    private static Bitmap decode(Context context, String uri) {
+        try (ParcelFileDescriptor fd = context.getContentResolver()
+                .openFileDescriptor(Uri.parse(uri), "r")) {
+            return fd == null ? null : BitmapFactory.decodeFileDescriptor(fd.getFileDescriptor());
+        } catch (Exception e) {
+            Log.w(TAG, "Could not load " + uri, e);
+            return null;
+        }
     }
 
     private void updateTime() {
@@ -205,13 +274,20 @@ public final class DepthHomeLayer extends View {
         if (!mEnabled || subject == null) return;
         // Both layers live in screen space, like the wallpaper they're cut from.
         getLocationOnScreen(mScreenPosition);
-        // The launcher window is edge to edge, so its root is the full display.
-        int screenW = getRootView().getWidth();
-        int screenH = getRootView().getHeight();
+        // display size, same as the lock clock, so the two land on the same pixels
+        android.graphics.Rect display = PetalConfig.displayBounds(getContext());
+        int screenW = display.width();
+        int screenH = display.height();
         canvas.save();
         canvas.translate(-mScreenPosition[0], -mScreenPosition[1]);
-        mClock.draw(canvas, screenW, screenH, mStyle, mVertical, mAnchorX, mAnchorY, mScale,
-                mInk, mShowDate, mHour, mMinute, mDate);
+        if (mRiseAlpha > 0f) {
+            int clockSave = canvas.save();
+            canvas.translate(0f, mRise);
+            if (mRiseAlpha < 1f) canvas.saveLayerAlpha(null, Math.round(255f * mRiseAlpha));
+            mClock.draw(canvas, screenW, screenH, mStyle, mVertical, mAnchorX, mAnchorY, mScale,
+                    mInk, mShowDate, mHour, mMinute, mDate);
+            canvas.restoreToCount(clockSave);
+        }
         mSubjectRect.set(0, 0, screenW, screenH);
         canvas.drawBitmap(subject, null, mSubjectRect, mSubjectPaint);
         canvas.restore();
